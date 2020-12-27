@@ -1,0 +1,179 @@
+## Python3 modules required for ErepFriends app development
+## ---------------------------------------------------------
+
+# PyPi (non-standard modules)
+# -----------------------------------------
+# DEV
+# -------
+# See: https://packaging.python.org/tutorials/packaging-projects/ <-- do this
+#   Replace current build instruction with ones noted here
+#   It is not terrible different from what I have been doing,
+#    but it creates a wheel in addition to an egg
+# See: https://packaging.python.org/
+#
+# See: https://packaging.python.org/discussions/wheel-vs-egg/
+# PEP 427 describes a wheel: https://www.python.org/dev/peps/pep-0427/
+# The ".dist-info" file is compatible with PEP 376: https://www.python.org/dev/peps/pep-0376/
+# Also see: https://docs.python.org/2/library/sysconfig.html#installation-paths
+# Using the wheel means getting further away from "distutils"...
+#  - setuptools is a widely-used wrapper around distutils.
+#  - nobody uses distutils directly
+#  - pip runs setup.py scripts using setuptools
+#
+# Installing
+# Packaging
+# Distributing
+#
+# Also, consider using PyPy or other optimizing compiler for data-crunching modules.
+#
+bump2version    # import as bumpversion
+                    # cli only:  bump2version [options] part [file]
+                    #   where part is what part of version to change
+                    #   can name multiple files
+                    #   for option see:
+                    # bump2version --help
+                    # Example to bump setup.py from 1.1.9 to 2.0.0
+                    #   bump2version --current-version 1.1.9 major setup.py
+                    # See: https://github.com/c4urself/bump2version
+coverage        # test coverage utility
+                    # docs: https://coverage.readthedocs.io/en/coverage-5.3.1/
+                    # github: https://github.com/nedbat/coveragepy
+flake8          # Python linter+
+                    # pypi: https://pypi.org/project/flake8/
+                    # cli code analysis tool
+                    # flake8 --help
+ipython
+isort           # newer version
+                    # pypi: https://pypi.org/project/isort/
+                    # cli that sorts listing of imports
+                    # isort <filename>  <-- updates <filename>
+jupyter
+pip             # run as pip3 to guarantee python3 libraries
+                    # I've been using sudo -H at all times
+                    # Don't do that if using pip in a venv
+pur             # Auto-update requirements.txt to latest versions
+                    # pypi: https://pypi.org/project/pur/
+                    # pur -r <requirements file name>
+pyinstaller     # pypi: https://pypi.org/project/pyinstaller/
+                # See notes on pypi. There are some OS-level libs it may require.
+pytest          # Review. Much newer version than the one I had
+responses       # library for "mocking out" the requests library
+                    # pypi: https://pypi.org/project/responses/
+setuptools
+Sphinx          # Documentation system
+                    # See notes in Evernote.
+                    # This version is much newer than previous ones I've used, so review.
+tox             # cli dev-ops CI tool for Python
+                    # pypi: https://pypi.org/project/tox/
+                    # tox --help
+twine           # PyPi publishing utilities
+                    # pypi: https://pypi.org/project/twine/
+virtualenvwrapper   # Handy shortcuts to manage, configure venv's
+                        # pypi: https://pypi.org/project/virtualenvwrapper/
+                        # docs: https://virtualenvwrapper.readthedocs.io/en/latest/
+                        # Once it is setup and configured, such that all venvs
+                        #   reside under a single parent dir, say `./Envs`, then:
+                            # mkvirtualenv <environment name>
+                            # lssitepackages <-- list site packages
+                            # workon <environment name>  <-- switch environments
+                            # postmkvirtualenv <-- use config to install common libs
+                            # there's other stuff too, for project dirs, etc.
+wheel
+
+# APP
+# -------
+bs4             # BeautifulSoup
+cryptography
+erepublik       # pypi: https://pypi.org/project/eRepublik/
+                # docs: https://erepublik.readthedocs.io/en/latest/
+                    # This ^ is completely useless.
+                # github: https://github.com/eeriks/erepublik/
+                    # Lots of good things to learn from reading the code.
+                    # dir(erepublik...) to see what is defined then
+                    #   read the code to see how it works.
+                    # For example, may be of some interest:  erepublik.utils.send_mail
+pillow          # import as PIL
+prettyprint     # import as pprint
+pytz            # Improved timezone management
+                    # pypi: https://pypi.org/project/pytz/
+PySocks         # Handle UDP and TCP sockets better
+                    # pypi: https://pypi.org/project/PySocks/
+requests
+secrets
+tk
+tornado
+typing          # Specify format of parameters
+
+## and  maybe
+#    'arrow',
+#    'jinja2>=2.10.1',
+#    'flask_api',
+#    'openpyxl',
+#    'numpy',
+#    'pandas',
+#    'pprint',
+#    'requests',
+#    'tornado',
+#    'tornado_jinja2',
+#    'xlrd',
+#    'xlwt',
+#    'xlsxwriter' --> install poi instead, it will pull in xlsxwriter
+
+## Standard libraries used
+## ----------------------------------------------
+## See: https://docs.python.org/3/library/
+## For any standard lib, see: https://docs.python.org/3/library/<library_name>.html
+
+# DEV, DEPLOY
+# -----------
+# sysconfig
+# venv          # mkdir my_test_env && cd my_test_env
+                # python3 -m venv
+                # source env/bin/activate
+                # ...
+                #  pip installs only the venv now
+                #  to see where python now is coming from.;..
+                #  `which python`
+                #   or in python..
+                #     `import site`
+                #     `site.getpackages()`
+                # ...
+                # deactivate
+
+# APP
+# -------
+# fnmatch
+# json
+# logging
+# os
+# re
+# time
+
+## MORE, probably...
+# decimal           # is more efficient than float
+                        # Can set desired level of precision
+# pathlib           # Nicer version of path management
+                    # Do away with my local function for this
+# inspect           # get info about objects
+                        # good for debugging, maybe other things
+# sqlite3           # First, note that this is a standard library
+                        # See: https://docs.python.org/3/library/sqlite3.html
+                        # No separate server is needed
+                        # The DB is defined entirely by the app
+                        # Note that URI's can now define the db:
+                            # https://www.sqlite.org/uri.html
+                        # Complete sqlite docs: https://www.sqlite.org/docs.html
+# textwrapper       # Handy for formatting messages, other texts
+# traceback         # For advanced debugging and wrappers
+# unicodedata       # For working more directly with the UCD
+# warnings          # Wrapper on Exceptions to handle standard warning types
+                        # See notes on DeprecationWarning in particular
+
+
+# Custom / local
+# -------------------
+## from emsg_constants import EmsgConstants
+## from emsg_logger import EmsgLogger
+## from emsg_functions import EmsgFunctions
+## from emsg_encrypt import EmsgEncrypt
+## from erep_messenger import ErepMessenger

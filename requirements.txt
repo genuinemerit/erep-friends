@@ -1,0 +1,18 @@
+## Python3 modules required for ErepFriends app
+## --------------------------------------------
+
+# PyPi (non-standard modules)
+# -----------------------------------------
+bs4
+cryptography
+erepublik
+pathlib
+pillow
+prettyprint
+pytz
+PySocks
+requests
+secrets
+tk
+tornado
+typing
