@@ -27,6 +27,8 @@ from tkinter import messagebox, ttk
 from tornado.options import define, options
 
 from gm_dbase import GmDbase
+from gm_encrypt import GmEncryptv
+from gm_functions import GmFunctions
 from gm_logger import GmLogger
 from gm_reference import GmReference
 
@@ -41,7 +43,7 @@ class ErepFriends(object):
         self.__set_environment()
 
         """
-        self.__set_erepublik()
+        self.__set_erep_headers()
 
         # This is in-memory text and scrub
         # Maybe want to separate this from pure GUI logic
@@ -72,14 +74,26 @@ class ErepFriends(object):
         """
         pass
 
-    def __create_config_file(self, p_cfg_file_path: str):
+    def __create_config_file(self, p_cfg_file_path: str,
+                            p_bkup_db_path: str,
+                            p_arcv_db_path: str,
+                            p_local_tz: str,
+                            p_log_path: str,):
         """ Define and create config file
 
         Args:
             p_cfg_file_path (string): full path to config file
+            p_bkup_db_path (string): parent path to backup DB
+            p_arcv_db_path (string): parent path to archive DB
+            p_local_tz (string): localhost time zone
+            p_log_path (string): parent path to log file
         """
         cfg_txt = ""
         for cfg_nm, cfg_val in GR.configs.items():
+            cfg_val = p_bkup_db_path if cfg_nm == 'bkup_db_path' else cfg_val
+            cfg_val = p_arcv_db_path if cfg_nm == 'arcv_db_path' else cfg_val
+            cfg_val = p_local_tz if cfg_nm == 'local_tz' else cfg_val
+            cfg_val = p_log_path if cfg_nm == 'log_path' else cfg_val
             cfg_txt += "{} = '{}'\n".format(cfg_nm, cfg_val)
         with open(p_cfg_file_path, 'w') as cfgf:
             cfgf.write(cfg_txt)
@@ -145,6 +159,27 @@ class ErepFriends(object):
                 self.LOG.write_log("INFO",
                                    "Log level: {}".format(log_level))
 
+    def __set_erep_headers(self):
+        """ Set request headers for eRepublik calls.
+
+        @DEV
+            - Provide option to use lang other than EN?
+            - Review User-Agent list against options used in erepublik class
+
+        Sets:
+            self.erep_csrf_token (string): used to confirm login, session
+            self.erep_rqst (object): requests Session() object
+        """
+        self.erep_csrf_token = None
+        self.erep_rqst = requests.Session()
+        self.erep_rqst.headers = None
+        self.erep_rqst.headers = {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Encoding': 'gzip,deflate,sdch',
+            'Accept-Language': 'en-US,en;q=0.8',
+            'Connection': 'keep-alive',
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/31.0.1650.63 Chrome/31.0.1650.63 Safari/537.36'}
+
     def __set_environment(self):
         """ Handle basic set-up as needed.
             Complete necessary set-up steps before proceeding
@@ -152,14 +187,10 @@ class ErepFriends(object):
             Provide explain/help  of what goes on here.
             Optional files can also be set up later if desired.
             Replace console inputs with GUI.
-
-
-        if not sys.version_info >= (3, 6):
-            raise AssertionError('This script requires Python version 3.6 and higher\n'
-                                 'But Your version is v{}.{}.{}'.format(*sys.version_info))
         """
-        if sys.version_info[0] < 3:
-            raise Exception("Python 3 is required.")
+        if sys.version_info[:2] < (3, 6):
+            raise Exception(EnvironmentError, "Python 3 is required.\n"
+                "Your Python version is v{}.{}.{}".format(*sys.version_info))
 
         data_path = path.abspath(path.realpath(GR.configs["data_path"]))
         if not Path(data_path).exists():
@@ -167,147 +198,76 @@ class ErepFriends(object):
 
         cfg_file_path = path.join(data_path, GR.configs["cfg_file_name"])
         if not Path(cfg_file_path).exists():
-            self.set_backup_db_path()
-            self.set_archive_db_path()
-            self.set_local_time_zone()
-            self.set_log_file_path()
-            self.__create_config_file(cfg_file_path)
+            bkup_db_path = self.set_backup_db_path()
+            arcv_db_path = self.set_archive_db_path()
+            local_tz = self.set_local_time_zone()
+            log_path = self.set_log_file_path()
+            self.__create_config_file(cfg_file_path,
+                                      bkup_db_path, arcv_db_path,
+                                      local_tz, log_path)
         self.__set_options(cfg_file_path)
         self.__configure_database()
         self.__enable_logging()
+        self.__set_erep_headers()
 
-        # Establish user profile data and credentials
-        #   All of this will move to a standalone method or two...
-
-        # 1. See if user exists and get their profile data
-        #    Later, we'll use this to populate a friends record
+        # Does a user record already exist?
         result = self.DB.query_db("user")
         if result.rowcount == -1:
-            # User not found on database, so set up user profile and credentials
-            print("\nEnter user's eRepublik Profile ID to gather user info from eRepublik.")
-            erep_profile_id = input("eRep Profile ID: ")
-            erep_profile_id = erep_profile_id.strip()
-            profile_rec = self.get_user_profile(erep_profile_id)
-            for field in profile_rec._fields:
-                print("{}: {}".format(field, getattr(profile_rec, field)))
+            # No, so...
 
-            # 2. Establish that the user credentials work
-            print("\nEnter the user's eRepublik ID and Password to enable gathering full friends list.")
-            print("Password won't display on the screen. Both ID and Password are stored encrypted.")
+            # Establish if user credentials work
+            print("\nEnter the user's eRepublik Email Login ID and Password to enable"
+                  "gathering full friends list.")
+            print("Password won't display on the screen."
+                  "Both Email and Password are stored encrypted.")
             erep_email_id = input("eRep Email Login ID: ")
             erep_pass = getpass.getpass("eRep Password: ")
-
-            # pp((erep_email_id, erep_pass))
-
-            # 3. Attempt to log into eRepublik
-            #  So this seems to work fine, but not entirely clear what is returned
-            #  Looking thru his code, I do NOT see any function for returning the friends list
-            #  It also seems to "report" a lot of activity to ?? Telegram, maybe emails.
-            #  Writes to log pretty often but not sure where that log is located.
-            #  Not so sure I like that!
-            #  This is mainly about doing a lot of stuff using a script.
-            #  I don't see any "logout" or "disconnect". There is a note about
-            #  returning to home page after 15 minutes of inactivity.
-            player = Citizen(email=erep_email_id, password=erep_pass, auto_login=True)
-
-            print(player)
-            pp(player)
-            dir(player)
-
-        """
-
-class ErepublikProfileAPI(CitizenBaseAPI):
-
-    >> requires being logged in:
-    def _get_main_citizen_hovercard(self, citizen_id: int) -> Response:
-        return self.get(f"{self.url}/main/citizen-hovercard/{citizen_id}")
-
-    >> does not require being logged in:
-    def _get_main_citizen_profile_json(self, citizen_id: int) -> Response:
-        return self.get(f"{self.url}/main/citizen-profile-json/{citizen_id}")
-
-    def _get_main_party_members(self, party_id: int) -> Response:
-        return self.get(f"{self.url}/main/party-members/{party_id}")
-
-    def _post_login(self, email: str, password: str) -> Response:
-        data = dict(csrf_token=self.token, citizen_email=email, citizen_password=password, remember='on')
-        return self.post(f"{self.url}/login", data=data)
-
-    def _post_main_party_post_create(self, body: str) -> Response:
-        data = {"_token": self.token, "post_message": body}
-        return self.post(f"{self.url}/main/party-post/create/json", data=data)
-
-    def _post_main_wall_post_create(self, body: str) -> Response:
-        data = {"_token": self.token, "post_message": body}
-        return self.post(f"{self.url}/main/wall-post/create/json", data=data)
-
-    def _get_main_city_data_residents(self, city_id: int, page: int = 1, params: Mapping[str, Any] = None) -> Response:
-        if params is None:
-            params = {}
-        return self.get(f"{self.url}/main/city-data/{city_id}/residents", params={"currentPage": page, **params})
+            # Attempt to log into eRepublik
+            id_info = self.login_erep(p_email=erep_email_id, 
+                                      p_password=erep_pass)
+            self.logout_erep()
+            print('Hello!'
+                  'Gathering info about {}...').format(id_info.user_name)
+            # Get user eRep profile:
+            profile_rec = self.get_user_profile(id_info.profile_id)
+            # DEBUG:
+            for field in profile_rec._fields:
+                print("{}: {}".format(field, getattr(profile_rec, field)))
+            # Generate encryption key for the user
+            encrypt_key = GE.set_key()
+            omit_fields =  ('uid', 'hash_id', 'create_ts', 'update_ts',
+                           'delete_ts', 'is_encrypted')
+            # Generate uid and hash_id for user record
+            # >> Both, as well as encrypt-key generation,
+            #   should go into GmDBase.write_db() method instead
+            hash_text = ""
+            u_row = GR.user_rec
+            u_row.uid = GF.get_uid()
+            u_row.user_erep_profile_id = id_info.profile_id
+            hash_text += erep_mail_id
+            hash_text += erep_pass
+            hash_text += 'no'
+            hash_text += encrypt_key
+            u_row.hash_id = GF.hash_me(hash_text)
+            u_row.user_erep_email = encrypt_data(erep_mail_id, encrypt_key)
+            u_row.user_erep_password = encrypt_data(erep_pass, encrypt_key)
+            u_row.encrypt_all = 'no'
+            u_row.encrypt_key = encrypt_key
+            # Write user record
+            GD.write_db("add", "user", u_row, True)
 
 
-    class ErepublikProfileAPI(CitizenBaseAPI):
-
-    def _post_main_messages_compose(self, subject: str, body: str, citizens: List[int]) -> Response:
-        url_pk = 0 if len(citizens) > 1 else str(citizens[0])
-        data = dict(citizen_name=",".join([str(x) for x in citizens]),
-                    citizen_subject=subject, _token=self.token, citizen_message=body)
-        return self.post(f"{self.url}/main/messages-compose/{url_pk}", data=data)
-
-
-class CitizenMedia(BaseCitizen):
-
-    def publish_article(self, title: str, content: str, kind: int) -> int:
-        kinds = {1: "First steps in eRepublik", 2: "Battle orders", 3: "Warfare analysis",
-                 4: "Political debates and analysis", 5: "Financial business",
-                 6: "Social interactions and entertainment"}
-        if kind in kinds:
-            data = {'title': title, 'content': content, 'country': self.details.citizenship.id, 'kind': kind}
-            resp = self._post_main_write_article(title, content, self.details.citizenship.id, kind)
-            try:
-                article_id = int(resp.history[1].url.split("/")[-3])
-                self._report_action("ARTICLE_PUBLISH", f"Published new article \"{title}\" ({article_id})", kwargs=data)
-            except:  # noqa
-                article_id = 0
-            return article_id
-        else:
-            kinds = "\n".join([f"{k}: {v}" for k, v in kinds.items()])
-            raise classes.ErepublikException(f"Article kind must be one of:\n{kinds}\n'{kind}' is not supported")
-
-
-
-    def get_mu_members(self, mu_id: int) -> Dict[int, str]:
-        ret = {}
-        r = self._get_military_unit_data(mu_id)
-
-        for page in range(int(r.json()["panelContents"]["pages"])):
-            r = self._get_military_unit_data(mu_id, currentPage=page + 1)
-            for user in r.json()["panelContents"]["members"]:
-                if not user["isDead"]:
-                    ret.update({user["citizenId"]: user["name"]})
-        return ret
-
-
-        """
-
-
-            # 5. If credentials are OK (login works and profile IDs match), then:
-
-                # 6. Generate encryption key for the user
-                # 7. Ask if they want to encrypt all records
-
-                # 8. Generate uid and hash_id for user record
-                # 9. Write user record
-                # 10. Generate uid and hash_id for friend record
-                # 11. Write friends record for the user
+            # Generate uid and hash_id for friend record
+            hash_text = ""
+            hash_list = list(GR.friends_rec.keys())
+            # 11. Write friends record for the user
         else:
             # User records found on DB. May need to check that they are correct, and/
             # or provide an option to refresh them (e.g., new password, new mail id)
             for row in result:
                 pp(row)
 
-    def set_backup_db_path(self):
+    def set_backup_db_path(self) -> str:
         """ Set path to backup database.
             No scheduled backups yet. Do backups on demand.
             No rolling backups. A single backup db overwritten whenever
@@ -316,6 +276,8 @@ class CitizenMedia(BaseCitizen):
               the backup file to the main db location.
             @DEV
                 Replace CLI input with a GUI
+        Returns:
+            string: full parent path to backup db or 'None'
         """
         db_path = GR.configs["bkup_db_path"]
         while db_path in (None, "None", ""):
@@ -325,12 +287,15 @@ class CitizenMedia(BaseCitizen):
             db_path = path.abspath(path.realpath(db_path))
             if not Path(db_path).exists():
                 mkdir(db_path)
+        return db_path
 
-    def set_archive_db_path(self):
+    def set_archive_db_path(self) -> str:
         """ Set path to archive database.
             This is where we take a db copy prior to running a purge.
             @DEV
                 Replace CLI input with a GUI
+        Returns:
+            string: full parent path to archive db or 'None'
         """
         db_path = GR.configs["arcv_db_path"]
         while db_path in (None, "None", ""):
@@ -340,13 +305,17 @@ class CitizenMedia(BaseCitizen):
             db_path = path.abspath(path.realpath(db_path))
             if not Path(db_path).exists():
                 mkdir(db_path)
+        return db_path
 
-    def set_local_time_zone(self):
+    def set_local_time_zone(self) -> str:
         """ Since it is difficult (for me!) to get localhost time zone in
              POSIX/Olson format, ask user to input it.  This has little effect
              on anything, just to display it in log session header.
             @DEV
                 Replace CLI input with a GUI
+                Try doing a reverse lookup on the Olson database
+        Returns:
+            string: POSIX/Olson time zone name or 'None'
         """
         local_tz = GR.configs["local_tz"]
         while local_tz in (None, "None", ""):
@@ -356,11 +325,11 @@ class CitizenMedia(BaseCitizen):
                 print("\n{} is not a valid Time Zone name.".format(local_tz))
                 print(  "Try again or 'n' to skip it.")
                 local_tz = ""
-        if local_tz in all_timezones:
-            GR.configs["local_tz"] = local_tz
-            GR.LOCAL_TZ = local_tz
+        if local_tz not in all_timezones:
+            local_tz = GR.configs["local_tz"]
+        return local_tz
 
-    def set_log_file_path(self):
+    def set_log_file_path(self) -> str:
         """ Set path to log file.
             No rolling log mechanism in place yet.
             Manually backup or delete logs if desired.
@@ -368,6 +337,8 @@ class CitizenMedia(BaseCitizen):
               system creates a new log file if needed.
             @DEV
                 Replace CLI input with a GUI
+        Returns:
+            string: full parent path to log file or 'None'
         """
         log_path = GR.configs["log_path"]
         while log_path in (None, "None", ""):
@@ -377,6 +348,7 @@ class CitizenMedia(BaseCitizen):
             log_path = path.abspath(path.realpath(log_path))
             if not Path(log_path).exists():
                 mkdir(log_path)
+        return log_path
 
     def get_user_profile(self, p_profile_id: str) -> GR.NamedTuple:
         """ Retrieve profile for user from eRepublik.
@@ -392,8 +364,6 @@ class CitizenMedia(BaseCitizen):
         Returns:
             namedtuple: GR.friends_rec
         """
-        # This is pretty sweet and simple.
-        # See if erepublik library can do any better...
         profile_url = self.opt.erep_url + "/main/citizen-profile-json/" + p_profile_id
         erep_response = requests.get(profile_url)       # returns JSON
         if erep_response.status_code == 404:
@@ -472,28 +442,124 @@ class CitizenMedia(BaseCitizen):
             self.LOG.write_log('DEBUG', "user_profile: {}".format(profile_data))
         return profile_rec
 
-    def __set_erepublik(self):
-        """
-        Set request headers for eRepublik calls.
+    def login_erep(self, p_email: str, p_password: str) -> GR.NamedTuple:
+        """ Connect to eRepublik using valid email and password
 
-        @DEV - If not using US English, probably want to modify the Accept-Language values
-        @DEV - Should User-Agent list be updated?
-        @DEV - User-Agent "eMes/MO" seems odd. Not sure what that is.
-        See: https://github.com/eeriks/erepublik (GitHub)
-        and: https://libraries.io/pypi/eRepublik (PyPi)
-
-        :Set:
-          - {dict} request headers for login and logout connection to eRepublik
+        Args:
+            p_email (str): user's login ID (email) for eRepublik
+            p_password (str): user's password for eRepublik
+        Sets:
+            self.erep_csrf_token (string): CSRF token assigned by login
+        Returns:
+            namedtuple: id_info
         """
-        self.erep_rqst = requests.Session()
-        self.erep_rqst.headers = None
-        self.erep_csrf_token = None
-        self.erep_rqst.headers = {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Encoding': 'gzip,deflate,sdch',
-            'Accept-Language': 'en-US,en;q=0.8',
-            'Connection': 'keep-alive',
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/31.0.1650.63 Chrome/31.0.1650.63 Safari/537.36'}
+        id_info = namedtuple("id_info", "profile_id user_name")
+        if self.erep_csrf_token is not None:
+            raise Exception(ConnectionError, "Already logged in.\n"
+                                              "Run logout method.")
+        else:
+            formdata = {'citizen_email': p_email,
+                        'citizen_password': p_password,
+                        "remember": '1', 'commit': 'Login'}
+            erep_login = self.erep_rqst.post(self.opt.erep_url + "/login",
+                                            data=formdata,
+                                            allow_redirects=False)
+            if self.logme:
+                self.LOG.write_log('INFO', "user login status code: " +\
+                                   "{}".format(erep_login.status_code))
+            if erep_login.status_code == 302:
+                erep_response = self.erep_rqst.get(self.opt.erep_url)
+                erep_soup = bs(erep_response.text, features="html.parser")
+                soup_scripts = erep_soup.find_all("script")
+                soup_script = '\n'.join(map(str, soup_scripts))
+                # get CSRF token
+                regex = re.compile("csrfToken\s*:\s*\'([a-z0-9]+)\'")
+                self.erep_csrf_token = regex.findall(soup_script)[0]
+                # Get user profile ID
+                p_log = logdata.split('"citizen":{"citizenId":')
+                p_log = p_log[1].split(",")
+                id_info.profile_id = p_log[0]
+                # Get user name
+                p_log = logdata.split('"name":')
+                p_log = p_log[1].split(",")
+                id_info.user_name = p_log[0].replace('"', '')
+                if self.logme and self.opt.log_level == 'DEBUG':
+                    self.LOG.write_log('INFO', "CSRF Token:\t" +\
+                                       "{}".format(self.erep_csrf_token))
+                    self.LOG.write_log('INFO', "user login response:\n" +\
+                                       "{}".format(soup_script))
+                return id_info
+            else:
+                raise Exception(ConnectionError, "Login failed.\n"
+                                                 "Check credentials.")
+
+    def logout_erep(self):
+        """ Logout from eRepublik
+        Totally guessing here.
+        We get a 302 response here, which is good. But not sure if it is really terminating the user session.
+        formdata = {'citizen_email': self.opt.erep_mail_id,
+                    'citizen_password': self.opt.erep_pwd,
+                    '_token': self.erep_csrf_token,
+                    "remember": '1',
+                    'commit': 'Logout'}
+        """
+        formdata = {'_token': self.erep_csrf_token,
+                    "remember": '1',
+                    'commit': 'Logout'}
+        erep_logout = self.erep_rqst.post(self.opt.erep_url + "/logout",
+                                          data=formdata, allow_redirects=True)
+        if self.logme:
+            self.LOG.write_log('INFO', "user logout status code:" +\
+                               "{}".format(erep_logout.status_code))
+        if erep_logout.status_code == 302:
+            self.erep_csrf_token = None
+            self.erep_rqst.get(self.opt.erep_url)
+            # > GUI stuff: 
+            # self.status_text.config(text = self.opt.w_txt_disconnected)
+
+
+    def send_message(self, profile_data):
+        """
+        Send message to one recipient
+
+        Dang! --> "The challenge solution was incorrect"
+
+        "sitekey":"6Lf490AUAAAAAIqP0H7DFfXF5tva00u93wxAQ--h"
+
+        See: https://stackoverflow.com/questions/30647113/not-a-robot-recaptcha-without-a-form-but-ajax-instead
+
+        :Args: {string} citizen profile ID - tab - citizen name
+        """
+        # Prep message
+        profile = profile_data.split("\t")
+        self.citizen_id = profile[0].strip()
+        self.citizen_name = profile[1].strip()
+        m_sub = self.subject.get()
+        m_body = self.msg_body.get(1.0, tk.END)
+        m_body = m_body.replace("[citizen]", self.citizen_name)
+        m_body = m_body.replace("[user]", self.user_name)
+        # Send message
+        msg_url = "https://www.erepublik.com/en/main/messages-compose/{}".format(self.citizen_id)
+        msg_headers = {
+            "Referer": msg_url,
+            "X-Requested-With": "XMLHttpRequest"}
+        send_message = {
+            "_token": self.erep_csrf_token,
+            "citizen_name": self.citizen_id,
+            # "citizen_name": self.citizen_name,
+            "citizen_subject": m_sub,
+            "citizen_message": m_body}
+
+        msg_response = self.erep_rqst.post(
+            msg_url, data=send_message, headers=msg_headers, allow_redirects = False)
+        pp(msg_response.status_code)
+        pp(msg_response.text)
+
+        self.status_text.config(text = "{}{}".format(self.opt.w_txt_sent_to, profile_data))
+
+
+
+
 
     def ___set_graphic_interface():
         """ Construct GUI widgets for ErepFriends app
@@ -601,62 +667,6 @@ class CitizenMedia(BaseCitizen):
                        command=self.save_list_file).grid(row=2, column=1)
         else:
             self.win_save.deiconify()
-
-    def connect(self):
-        """
-        Login to eRepublik
-        This script accepts login credentials only from a configuration file.
-
-        @DEV - Eventually move login credentials to an encrypted sqllite database.
-
-        :Set: {string} CSRF token assigned after a valid login
-        """
-        if self.erep_csrf_token is not None:
-            messagebox.showinfo(title = self.opt.m_info_title,
-                                detail = self.opt.m_logged_in)
-        else:
-            formdata = {'citizen_email': self.opt.erep_mail_id,
-                        'citizen_password': self.opt.erep_pwd,
-                        "remember": '1',
-                        'commit': 'Login'}
-            erep_login = self.erep_rqst.post(self.opt.erep_url + "/login",
-                                            data=formdata, allow_redirects=False)
-            if self.logme:
-                self.LOG.write_log('INFO',
-                                "user login status code: {}".format(erep_login.status_code))
-            if erep_login.status_code == 302:
-                erep_response = self.erep_rqst.get(self.opt.erep_url)
-                erep_soup = bs(erep_response.text, features="html.parser")
-                soup_scripts = erep_soup.find_all("script")
-                soup_script = '\n'.join(map(str, soup_scripts))
-                #pylint: disable=anomalous-backslash-in-string
-                regex = re.compile("csrfToken\s*:\s*\'([a-z0-9]+)\'")
-                self.erep_csrf_token = regex.findall(soup_script)[0]
-                self.status_text.config(text = self.opt.w_txt_connected)
-                if self.logme and self.opt.log_level == 'DEBUG':
-                    self.LOG.write_log('INFO', "CSRF Token:\t{}".format(self.erep_csrf_token))
-                    self.LOG.write_log('INFO', "user login response:\n{}".format(soup_script))
-            else:
-                self.status_text.config(text = self.opt.w_txt_login_failed)
-
-    def disconnect(self):
-        """ Logout from eRepublik
-        Totally guessing here.
-        We get a 302 response here, which is good. But not sure if it is really terminating the user session.
-        """
-        formdata = {'citizen_email': self.opt.erep_mail_id,
-                    'citizen_password': self.opt.erep_pwd,
-                    "remember": '1',
-                    'commit': 'Logout'}
-        erep_logout = self.erep_rqst.post(self.opt.erep_url + "/logout",
-                                           data=formdata, allow_redirects=False)
-        if self.logme:
-            self.LOG.write_log('INFO',
-                               "user logout status code: {}".format(erep_logout.status_code))
-        if erep_logout.status_code == 302:
-            self.erep_csrf_token = None
-            self.erep_rqst.get(self.opt.erep_url)
-            self.status_text.config(text = self.opt.w_txt_disconnected)
 
     def exit_emsg(self):
         """ Quit the erep_friends app """
@@ -791,45 +801,6 @@ class CitizenMedia(BaseCitizen):
             return True
         else:
             return False
-
-    def send_message(self, profile_data):
-        """
-        Send message to one recipient
-
-        Dang! --> "The challenge solution was incorrect"
-
-        "sitekey":"6Lf490AUAAAAAIqP0H7DFfXF5tva00u93wxAQ--h"
-
-        See: https://stackoverflow.com/questions/30647113/not-a-robot-recaptcha-without-a-form-but-ajax-instead
-
-        :Args: {string} citizen profile ID - tab - citizen name
-        """
-        # Prep message
-        profile = profile_data.split("\t")
-        self.citizen_id = profile[0].strip()
-        self.citizen_name = profile[1].strip()
-        m_sub = self.subject.get()
-        m_body = self.msg_body.get(1.0, tk.END)
-        m_body = m_body.replace("[citizen]", self.citizen_name)
-        m_body = m_body.replace("[user]", self.user_name)
-        # Send message
-        msg_url = "https://www.erepublik.com/en/main/messages-compose/{}".format(self.citizen_id)
-        msg_headers = {
-            "Referer": msg_url,
-            "X-Requested-With": "XMLHttpRequest"}
-        send_message = {
-            "_token": self.erep_csrf_token,
-            "citizen_name": self.citizen_id,
-            # "citizen_name": self.citizen_name,
-            "citizen_subject": m_sub,
-            "citizen_message": m_body}
-
-        msg_response = self.erep_rqst.post(
-            msg_url, data=send_message, headers=msg_headers, allow_redirects = False)
-        pp(msg_response.status_code)
-        pp(msg_response.text)
-
-        self.status_text.config(text = "{}{}".format(self.opt.w_txt_sent_to, profile_data))
 
     def send_message_to_next(self):
         """

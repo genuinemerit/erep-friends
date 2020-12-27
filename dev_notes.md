@@ -112,3 +112,97 @@ Logger is using local (US/Eastern) time while
 Don't ask for optional file locations if efriends.conf already exists
 Work on the GUI for handling set-up. Don't get too far down the road
   with just the console inputs.
+
+## erepublik Class
+
+===========================
+
+            #  So this seems to work fine, but not entirely clear what is returned
+            #  Looking thru his code, I do NOT see any function for returning the friends list
+            #  It also seems to "report" a lot of activity to ?? Telegram, maybe emails?
+            #  Writes to log and debug pretty often (locally) and records passwords and other keys
+            #  Not so sure I like that .. have to be cautious not to push to github
+
+            #  This is mainly about doing a lot of stuff using a script.
+            #  I don't see any "logout" or "disconnect". There is a note about
+            #  returning to home page after 15 minutes of inactivity.
+            # player = Citizen(email=erep_email_id, password=erep_pass, auto_login=True)
+
+    Interesting for sure, but not really what I need.
+
+"""
+
+class ErepublikProfileAPI(CitizenBaseAPI):
+
+    >> requires being logged in:
+    def _get_main_citizen_hovercard(self, citizen_id: int) -> Response:
+        return self.get(f"{self.url}/main/citizen-hovercard/{citizen_id}")
+
+    >> does not require being logged in:
+    def _get_main_citizen_profile_json(self, citizen_id: int) -> Response:
+        return self.get(f"{self.url}/main/citizen-profile-json/{citizen_id}")
+
+    def _get_main_party_members(self, party_id: int) -> Response:
+        return self.get(f"{self.url}/main/party-members/{party_id}")
+
+    def _post_login(self, email: str, password: str) -> Response:
+        data = dict(csrf_token=self.token, citizen_email=email, citizen_password=password, remember='on')
+        return self.post(f"{self.url}/login", data=data)
+
+    def _post_main_party_post_create(self, body: str) -> Response:
+        data = {"_token": self.token, "post_message": body}
+        return self.post(f"{self.url}/main/party-post/create/json", data=data)
+
+    def _post_main_wall_post_create(self, body: str) -> Response:
+        data = {"_token": self.token, "post_message": body}
+        return self.post(f"{self.url}/main/wall-post/create/json", data=data)
+
+    def _get_main_city_data_residents(self, city_id: int, page: int = 1, params: Mapping[str, Any] = None) -> Response:
+        if params is None:
+            params = {}
+        return self.get(f"{self.url}/main/city-data/{city_id}/residents", params={"currentPage": page, **params})
+
+
+    class ErepublikProfileAPI(CitizenBaseAPI):
+
+    def _post_main_messages_compose(self, subject: str, body: str, citizens: List[int]) -> Response:
+        url_pk = 0 if len(citizens) > 1 else str(citizens[0])
+        data = dict(citizen_name=",".join([str(x) for x in citizens]),
+                    citizen_subject=subject, _token=self.token, citizen_message=body)
+        return self.post(f"{self.url}/main/messages-compose/{url_pk}", data=data)
+
+
+class CitizenMedia(BaseCitizen):
+
+    def publish_article(self, title: str, content: str, kind: int) -> int:
+        kinds = {1: "First steps in eRepublik", 2: "Battle orders", 3: "Warfare analysis",
+                 4: "Political debates and analysis", 5: "Financial business",
+                 6: "Social interactions and entertainment"}
+        if kind in kinds:
+            data = {'title': title, 'content': content, 'country': self.details.citizenship.id, 'kind': kind}
+            resp = self._post_main_write_article(title, content, self.details.citizenship.id, kind)
+            try:
+                article_id = int(resp.history[1].url.split("/")[-3])
+                self._report_action("ARTICLE_PUBLISH", f"Published new article \"{title}\" ({article_id})", kwargs=data)
+            except:  # noqa
+                article_id = 0
+            return article_id
+        else:
+            kinds = "\n".join([f"{k}: {v}" for k, v in kinds.items()])
+            raise classes.ErepublikException(f"Article kind must be one of:\n{kinds}\n'{kind}' is not supported")
+
+
+
+    def get_mu_members(self, mu_id: int) -> Dict[int, str]:
+        ret = {}
+        r = self._get_military_unit_data(mu_id)
+
+        for page in range(int(r.json()["panelContents"]["pages"])):
+            r = self._get_military_unit_data(mu_id, currentPage=page + 1)
+            for user in r.json()["panelContents"]["members"]:
+                if not user["isDead"]:
+                    ret.update({user["citizenId"]: user["name"]})
+        return ret
+
+
+        """

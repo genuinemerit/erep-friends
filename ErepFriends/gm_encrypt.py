@@ -58,7 +58,7 @@ class GmEncrypt(object):
         """
         encrypt_key = Fernet.generate_key()
         key_string = encrypt_key.decode("utf-8")
-        return json.dumps(key_string)
+        return key_string
 
     @classmethod
     def encrypt_data(cls, p_plaintext, p_key):

@@ -155,8 +155,8 @@ class GmReference(object):
         # DATABASE TABLES
         # user_rec
         fields = " ".join(['uid',
-                           'user_erep_email',
                            'user_erep_profile_id',
+                           'user_erep_email',
                            'user_erep_password',
                            'encrypt_all',
                            'encrypt_key',

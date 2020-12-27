@@ -307,7 +307,7 @@ class GmDbase(object):
                  p_tbl_nm: GR.dbtable_t,
                  p_data_row: GR.NamedTuple,
                  p_uid: str = None,
-                 p_encrypt_tag: str = None):
+                 p_encrypt: bool = False):
         """ Write a record to the DB. It is a write-only system,
               with no physical updates or deletes except on purge.
             Update and Delete actions only accept UID as key value.
@@ -341,13 +341,12 @@ class GmDbase(object):
                 Somewhere I saw a little API for converting date/time into
                 an eRep Day Number.  That would be a handy routine to have.
 
-                For user and encrypt tables, limit them in various ways, like:
+                For user table, limit them in various ways, like:
                 - Only one user profile ID can be defined, but password and
                    email associated with it can be updated.
                 - Encrypt tags/keys cannot be deleted if they are in use on
                   any active databases.
-                - Tags cannot be re-used with a different key.
-                - Encrypt records cannot be updated, only deleted.
+                - Encrypt key is generated when adding a user row
 
         Args:
             p_db_action (string, Literal): 'add', 'upd', or 'del'
