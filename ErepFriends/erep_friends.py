@@ -27,12 +27,13 @@ from tkinter import messagebox, ttk
 from tornado.options import define, options
 
 from gm_dbase import GmDbase
-from gm_encrypt import GmEncryptv
 from gm_functions import GmFunctions
 from gm_logger import GmLogger
 from gm_reference import GmReference
+from gm_encrypt import GmEncrypt
 
 GR = GmReference()
+GE = GmEncrypt()
 
 class ErepFriends(object):
     """
@@ -75,6 +76,7 @@ class ErepFriends(object):
         pass
 
     def __create_config_file(self, p_cfg_file_path: str,
+                            p_data_path: str,
                             p_bkup_db_path: str,
                             p_arcv_db_path: str,
                             p_local_tz: str,
@@ -83,6 +85,7 @@ class ErepFriends(object):
 
         Args:
             p_cfg_file_path (string): full path to config file
+            p_data_path (string): parent path to main DB
             p_bkup_db_path (string): parent path to backup DB
             p_arcv_db_path (string): parent path to archive DB
             p_local_tz (string): localhost time zone
@@ -90,6 +93,7 @@ class ErepFriends(object):
         """
         cfg_txt = ""
         for cfg_nm, cfg_val in GR.configs.items():
+            cfg_val = p_data_path if cfg_nm == 'data_path' else cfg_val
             cfg_val = p_bkup_db_path if cfg_nm == 'bkup_db_path' else cfg_val
             cfg_val = p_arcv_db_path if cfg_nm == 'arcv_db_path' else cfg_val
             cfg_val = p_local_tz if cfg_nm == 'local_tz' else cfg_val
@@ -202,7 +206,7 @@ class ErepFriends(object):
             arcv_db_path = self.set_archive_db_path()
             local_tz = self.set_local_time_zone()
             log_path = self.set_log_file_path()
-            self.__create_config_file(cfg_file_path,
+            self.__create_config_file(cfg_file_path, data_path,
                                       bkup_db_path, arcv_db_path,
                                       local_tz, log_path)
         self.__set_options(cfg_file_path)
@@ -223,44 +227,28 @@ class ErepFriends(object):
             erep_email_id = input("eRep Email Login ID: ")
             erep_pass = getpass.getpass("eRep Password: ")
             # Attempt to log into eRepublik
-            id_info = self.login_erep(p_email=erep_email_id, 
+            id_info = self.login_erep(p_email=erep_email_id,
                                       p_password=erep_pass)
             self.logout_erep()
             print('Hello!'
-                  'Gathering info about {}...').format(id_info.user_name)
+                  'Gathering info about {}...'.format(id_info.user_name))
             # Get user eRep profile:
             profile_rec = self.get_user_profile(id_info.profile_id)
             # DEBUG:
-            for field in profile_rec._fields:
-                print("{}: {}".format(field, getattr(profile_rec, field)))
+            # for field in profile_rec._fields:
+            #    print("{}: {}".format(field, getattr(profile_rec, field)))
             # Generate encryption key for the user
             encrypt_key = GE.set_key()
-            omit_fields =  ('uid', 'hash_id', 'create_ts', 'update_ts',
-                           'delete_ts', 'is_encrypted')
-            # Generate uid and hash_id for user record
-            # >> Both, as well as encrypt-key generation,
-            #   should go into GmDBase.write_db() method instead
-            hash_text = ""
             u_row = GR.user_rec
-            u_row.uid = GF.get_uid()
             u_row.user_erep_profile_id = id_info.profile_id
-            hash_text += erep_mail_id
-            hash_text += erep_pass
-            hash_text += 'no'
-            hash_text += encrypt_key
-            u_row.hash_id = GF.hash_me(hash_text)
-            u_row.user_erep_email = encrypt_data(erep_mail_id, encrypt_key)
-            u_row.user_erep_password = encrypt_data(erep_pass, encrypt_key)
-            u_row.encrypt_all = 'no'
+            u_row.user_erep_email = erep_email_id
+            u_row.user_erep_password = erep_pass
+            u_row.encrypt_all = 'False'
             u_row.encrypt_key = encrypt_key
             # Write user record
-            GD.write_db("add", "user", u_row, True)
+            self.DB.write_db("add", "user", u_row, None, True)
 
-
-            # Generate uid and hash_id for friend record
-            hash_text = ""
-            hash_list = list(GR.friends_rec.keys())
-            # 11. Write friends record for the user
+            # Write friends record for the user
         else:
             # User records found on DB. May need to check that they are correct, and/
             # or provide an option to refresh them (e.g., new password, new mail id)
@@ -476,11 +464,11 @@ class ErepFriends(object):
                 regex = re.compile("csrfToken\s*:\s*\'([a-z0-9]+)\'")
                 self.erep_csrf_token = regex.findall(soup_script)[0]
                 # Get user profile ID
-                p_log = logdata.split('"citizen":{"citizenId":')
+                p_log = soup_script.split('"citizen":{"citizenId":')
                 p_log = p_log[1].split(",")
                 id_info.profile_id = p_log[0]
                 # Get user name
-                p_log = logdata.split('"name":')
+                p_log = soup_script.split('"name":')
                 p_log = p_log[1].split(",")
                 id_info.user_name = p_log[0].replace('"', '')
                 if self.logme and self.opt.log_level == 'DEBUG':

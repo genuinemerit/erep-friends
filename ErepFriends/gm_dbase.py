@@ -347,7 +347,8 @@ class GmDbase(object):
                 - Encrypt tags/keys cannot be deleted if they are in use on
                   any active databases.
                 - Encrypt key is generated when adding a user row
-
+                - Why not use the hash-id as the PK? Do I really need UID?
+                  -- Yeah, I guess for being able to trace changes.
         Args:
             p_db_action (string, Literal): 'add', 'upd', or 'del'
             p_tbl_nm (string, Literal): 'encrypt', 'user', or 'friends'
@@ -365,7 +366,64 @@ class GmDbase(object):
             GR.NamedTuple: A copy of the added, updated, or deleted record,
                            formatted using the GR data structures.
         """
-        pass
+        if p_db_action not in self.DBACTION:
+            raise Exception(IOEror,
+                "Database action must be in {}".format(str(self.DBACTION)))
+        if p_tbl_nm not in GR.DBTABLE:
+            raise Exception(IOEror,
+                "Database table must be in {}".format(str(self.DBTABLE)))
+        if p_db_action == "del":
+            print("Logical DELETE DB call not enabled yet")
+            return False
+        if p_db_action in ("add", "upd"):
+            # Identify columns
+            data_rec = GR.user_rec if tbl_nm == "user" else GR.friends_rec
+            columns = list(data_rec._fields)
+            auto_fields = ('uid', 'hash_id', 'create_ts', 'update_ts',
+                           'delete_ts', 'is_encrypted')
+            # Generate hash
+            hash_text = ""
+            for col_nm in columns:
+                if col_nm not in auto_fields:
+                    hash_text += getattr(data_rec, col_nm)
+            p_data_row.hash_id = GF.hash_me(hash_text)
+            # Update audit fields
+            dttm = GF.dttm()
+            p_data_row.update_ts = dttm.curr_utc
+            p_data_row.delete_ts = None
+            # Add
+            if p_db_action == "add":
+                if p_tbl_nm == "user":
+                    # Handle encryption
+                    p_data_row.is_encrypted = "True"
+                    if p_data_row.encrypt_key in (None, "None", ""):
+                        raise Exception(ValueError, "No encryption key provided")
+                    for col_nm in columns:
+                        if col_nm not in auto_fields:
+                            plain_val = getattr(data_rec, col_nm)
+                            encrypted_val = GE.encrypt_data(plain_val,
+                                                    data_rec.encrypt_key)
+                            setattr(data_rec, col_nm, encrypted_val)
+
+                # Build SQL for an INSERT
+                p_data_row.uid = GF.get_uid()
+                p_data_row.create_ts = dttm.curr_utc
+                columns = ", ".join(columns)
+                values = ""
+                for col_nm in columns:
+                    values += getattr(data_rec, col_nm) + ", "
+                sql = "INSERT {} ({}) VALUES ({});".format(p_tbl_nm,
+                                                    columns, values[:-2])
+            # Update
+
+            # Delete
+
+            # Execute and commit SQL
+            self.connect_db()
+            cur = self.dbmain_conn.cursor()
+            pp(sql)
+            cur.commit()
+            return cur.execute(sql)
 
     def query_db(self,
                  p_tbl_nm: GR.dbtable_t, p_filter: dict = None) -> object:
