@@ -11,7 +11,7 @@ Simple encryption methods
 import inspect
 import json
 from os import path
-# from pprint import pprint as pp
+from pprint import pprint as pp
 
 from cryptography.fernet import Fernet
 from tornado.options import define, options
@@ -54,24 +54,23 @@ class GmEncrypt(object):
         """ Create a key for use with Fernet encryption.
 
         Returns:
-            str: encryption key
+            bytes: encryption key
         """
         encrypt_key = Fernet.generate_key()
-        key_string = encrypt_key.decode("utf-8")
-        return key_string
+        return encrypt_key
 
     @classmethod
-    def encrypt_data(cls, p_plaintext, p_key):
+    def encrypt_data(cls, p_plaintext: str, p_key: bytes) -> str:
         """ Return encrypted version of the plaintext
 
         Args:
             p_plaintext (string): data to be encrypted
-            p_key (string):  encryption key to use
+            p_key (bytes):  encryption key to use
 
         Returns:
             string: encrypted version of data
         """
-        cipher_suite = Fernet(bytes(p_key, 'utf-8'))
+        cipher_suite = Fernet(p_key)
         encoded_bytes = cipher_suite.encrypt(bytes(p_plaintext, 'utf-8'))
         return encoded_bytes.decode("utf-8")
 

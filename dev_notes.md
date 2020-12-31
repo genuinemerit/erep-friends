@@ -206,3 +206,15 @@ class CitizenMedia(BaseCitizen):
 
 
         """
+
+Save a copy of the full user profile in a log file once it is retrieved successfully.
+Tag it with the user login email.
+Then if we subsequently get a response code 200 when trying to log in, use the backed-up copy instead.
+Generally speaking, we only need to log into erep during initial set up and when refreshing the friends list.
+Still not sure why sometimes I get a 200. If am understanding the "good" 302 vs. the "bad" 200,
+ a successful (302) login does a URL redirection. A 200 _might_ indicate that the system thinks I am still
+ logged in, but I suspect it is more due to being "red-flagged" after a "suspicious" number of login
+ attempts in short period, so I am getting "success" on a page that wants me to do a captcha.
+Furthermore, I suspect that any script-based login will a "cookie-less" login, which might raise
+ the "suspicion" index a bit?
+Tracking the time lag betewen login attempts might help.

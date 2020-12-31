@@ -249,5 +249,5 @@ class GmFunctions(object):
         """
         p_uid_length = 32 if p_uid_length is None else p_uid_length
         p_uid_length = 32 if p_uid_length < 32 else p_uid_length
-        secret_key = secrets.token_urlsafe(p_uid_length)
-        return secret_key.decode("utf-8")
+        uid_val = secrets.token_urlsafe(p_uid_length)
+        return uid_val

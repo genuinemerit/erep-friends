@@ -238,7 +238,10 @@ class GmDbase(object):
             if len(result) == 0:
                 fields = list(GR.DBSCHEMA[tbl_nm]._fields)
                 for idx, val in enumerate(fields):
-                    fields[idx] = val + " TEXT"
+                    if val == "encrypt_key":
+                        fields[idx] = val + " BLOB"
+                    else:
+                        fields[idx] = val + " TEXT"
                     if val in ("create_ts", "hash_id"):
                         fields[idx] += " NOT NULL"
                     if val == "uid":
@@ -257,8 +260,10 @@ class GmDbase(object):
                 In other words, archive a backup before replacing it.
                 Then remove oldest backups periodically.
         """
+        pp(("self.opt.bkup_db_path", self.opt.bkup_db_path))
+
         if self.opt.bkup_db_path in (None, 'None', ""):
-            pass
+            print("No backup database path has been defined")
         else:
             self.connect_db()
             self.connect_dbkup()
@@ -271,8 +276,10 @@ class GmDbase(object):
             This is distinct from the regular backup file.
             It is a time-stamped, one-time copy.
         """
+        pp(("self.opt.arcv_db_path", self.opt.arcv_db_path))
+
         if self.opt.arcv_db_path in (None, 'None', ""):
-            pass
+            print("No archive database path has been defined")
         else:
             self.connect_db()
             self.connect_darcv()
@@ -366,7 +373,7 @@ class GmDbase(object):
             GR.NamedTuple: A copy of the added, updated, or deleted record,
                            formatted using the GR data structures.
         """
-        if p_db_action not in self.DBACTION:
+        if p_db_action not in GR.DBACTION:
             raise Exception(IOEror,
                 "Database action must be in {}".format(str(self.DBACTION)))
         if p_tbl_nm not in GR.DBTABLE:
@@ -376,19 +383,20 @@ class GmDbase(object):
             print("Logical DELETE DB call not enabled yet")
             return False
         if p_db_action in ("add", "upd"):
+            dttm = GF.get_dttm()
             # Identify columns
-            data_rec = GR.user_rec if tbl_nm == "user" else GR.friends_rec
-            columns = list(data_rec._fields)
-            auto_fields = ('uid', 'hash_id', 'create_ts', 'update_ts',
-                           'delete_ts', 'is_encrypted')
+            record_struct = GR.DBSCHEMA[p_tbl_nm]._fields
+            # record_struct = GR.user_rec if p_tbl_nm == "user" else GR.friends_rec
+            # record_struct = set(list(record_struct._fields))
+            auto_fields = ['uid', 'encrypt_all', 'encrypt_key', 'hash_id',
+                           'create_ts', 'update_ts', 'delete_ts',
+                           'is_encrypted']
+            col_nms = [col_nm for col_nm in record_struct
+                               if col_nm not in auto_fields]
+            col_vals = [getattr(p_data_row, col_nm) for col_nm in col_nms]
             # Generate hash
-            hash_text = ""
-            for col_nm in columns:
-                if col_nm not in auto_fields:
-                    hash_text += getattr(data_rec, col_nm)
-            p_data_row.hash_id = GF.hash_me(hash_text)
-            # Update audit fields
-            dttm = GF.dttm()
+            p_data_row.hash_id = GF.hash_me("".join(col_vals))
+            # Set audit fields
             p_data_row.update_ts = dttm.curr_utc
             p_data_row.delete_ts = None
             # Add
@@ -396,34 +404,46 @@ class GmDbase(object):
                 if p_tbl_nm == "user":
                     # Handle encryption
                     p_data_row.is_encrypted = "True"
-                    if p_data_row.encrypt_key in (None, "None", ""):
-                        raise Exception(ValueError, "No encryption key provided")
-                    for col_nm in columns:
-                        if col_nm not in auto_fields:
-                            plain_val = getattr(data_rec, col_nm)
-                            encrypted_val = GE.encrypt_data(plain_val,
-                                                    data_rec.encrypt_key)
-                            setattr(data_rec, col_nm, encrypted_val)
+                    if p_data_row.encrypt_key in (None, "None", "", b"None", b""):
+                        raise Exception(ValueError,
+                                        "No encryption key provided")
+                    for col_val in col_vals:
+                        col_nm = col_nms[col_vals.index(col_val)]
+                        encrypted_val = GE.encrypt_data(col_val,
+                                                    p_data_row.encrypt_key)
+                        setattr(p_data_row, col_nm, encrypted_val)
 
                 # Build SQL for an INSERT
                 p_data_row.uid = GF.get_uid()
                 p_data_row.create_ts = dttm.curr_utc
-                columns = ", ".join(columns)
-                values = ""
-                for col_nm in columns:
-                    values += getattr(data_rec, col_nm) + ", "
-                sql = "INSERT {} ({}) VALUES ({});".format(p_tbl_nm,
-                                                    columns, values[:-2])
+                sql_cols = ", ".join(record_struct)
+                sql_vals = ""
+                for col_nm in record_struct:
+                    if col_nm == "encrypt_key":
+                        sql_vals += "?, "
+                    else:
+                        val = getattr(p_data_row, col_nm)
+                        if val == None:
+                            sql_vals += "NULL, "
+                        else:
+                            sql_vals += "'{}', ".format(val)
+                sql = "INSERT INTO {} ({}) VALUES ({});".format(p_tbl_nm,
+                                                    sql_cols, sql_vals[:-2])
             # Update
 
             # Delete
 
             # Execute and commit SQL
+            self.disconnect_db()
             self.connect_db()
             cur = self.dbmain_conn.cursor()
-            pp(sql)
-            cur.commit()
-            return cur.execute(sql)
+            # pp(sql)
+            if "encrypt_key" in record_struct:
+                result = cur.execute(sql, [p_data_row.encrypt_key])
+            else:
+                result = cur.execute(sql)
+            self.dbmain_conn.commit()
+            return result
 
     def query_db(self,
                  p_tbl_nm: GR.dbtable_t, p_filter: dict = None) -> object:
