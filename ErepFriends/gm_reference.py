@@ -184,6 +184,11 @@ class GmReference(object):
                            'hash_id', 'create_ts', 'update_ts', 'delete_ts',
                            'is_encrypted'])
         self.friends_rec = namedtuple('friends_rec', fields)
+        # auto_fields
+        fields = " ".join(['uid', 'encrypt_all', 'encrypt_key', 'hash_id',
+                           'create_ts', 'update_ts', 'delete_ts',
+                           'is_encrypted'])
+        self.auto = namedtuple('auto', fields)
 
         # DATABASE SCHEMAS
         self.DBSCHEMA = {

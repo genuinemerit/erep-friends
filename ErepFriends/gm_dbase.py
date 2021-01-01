@@ -178,30 +178,6 @@ class GmDbase(object):
 
         # pp(("self.opt", self.opt))
 
-    def connect_db(self):
-        """ Open connection to main database at configured path.
-            Sets class-level property to hold connection.
-        """
-        self.dbmain_conn = None
-        db = self.__set_db_path()
-        self.dbmain_conn = sq3.connect(db)
-
-    def connect_dbkup(self):
-        """ Open connection to backup database at configured path.
-            Sets class-level property to hold connection.
-        """
-        self.dbbkup_conn = None
-        dbkup = self.__set_backup_path()
-        self.dbkup_conn = sq3.connect(dbkup)
-
-    def connect_darcv(self):
-        """ Open connection to archive database at configured path.
-            Sets class-level property to hold connection.
-        """
-        self.dbarcv_conn = None
-        darcv = self.__set_archive_path()
-        self.dbarcv_conn = sq3.connect(darcv)
-
     def disconnect_db(self):
         """ Drop connection to main database at configured path.
         """
@@ -219,6 +195,30 @@ class GmDbase(object):
         """
         self.dbarcv_conn.close()
         self.dbarcv_conn = None
+
+    def connect_db(self):
+        """ Open connection to main database at configured path.
+            Sets class-level property to hold connection.
+        """
+        self.disconnect_db()
+        db = self.__set_db_path()
+        self.dbmain_conn = sq3.connect(db)
+
+    def connect_dbkup(self):
+        """ Open connection to backup database at configured path.
+            Sets class-level property to hold connection.
+        """
+        self.disconnect_dbkup()
+        dbkup = self.__set_backup_path()
+        self.dbkup_conn = sq3.connect(dbkup)
+
+    def connect_darcv(self):
+        """ Open connection to archive database at configured path.
+            Sets class-level property to hold connection.
+        """
+        self.disconnect_darcv()
+        darcv = self.__set_archive_path()
+        self.dbarcv_conn = sq3.connect(darcv)
 
     def create_tables(self, cur: object):
         """ Create DB tables for efriends database.
@@ -309,6 +309,25 @@ class GmDbase(object):
         # Create backup database
         self.backup_db()
 
+    def get_rec_data(self, p_tbl_nm:  GR.dbtable_t,
+                     p_data_row: GR.NamedTuple) -> GR.NamedTuple:
+        """Break out col names and values that are not audit fields.
+
+        Args:
+            p_tbl_nm (str): valid db table name
+            p_data_row (namedtuple): full set of col names and values
+
+        Returns:
+            GR.NamedTuple: rec_data
+        """
+        rec_data = namedtuple("rec_data", "tbl_struct col_nms col_vals")
+        rec_data.tbl_struct = GR.DBSCHEMA[p_tbl_nm]._fields
+        rec_data.col_nms = [col_nm for col_nm in tbl_struct
+                                    if col_nm not in GR.auto._fields]
+        rec_data.col_vals =\
+            [getattr(p_data_row, col_nm) for col_nm in rec_data.col_nms]
+        return rec_data
+
     def write_db(self,
                  p_db_action: GR.dbaction_t,
                  p_tbl_nm: GR.dbtable_t,
@@ -372,6 +391,11 @@ class GmDbase(object):
         Return:
             GR.NamedTuple: A copy of the added, updated, or deleted record,
                            formatted using the GR data structures.
+
+        @DEV
+            Clean this up.
+            Add update and delete logic.
+            Handle a friends record
         """
         if p_db_action not in GR.DBACTION:
             raise Exception(IOEror,
@@ -384,41 +408,42 @@ class GmDbase(object):
             return False
         if p_db_action in ("add", "upd"):
             dttm = GF.get_dttm()
-            # Identify columns
-            record_struct = GR.DBSCHEMA[p_tbl_nm]._fields
-            # record_struct = GR.user_rec if p_tbl_nm == "user" else GR.friends_rec
-            # record_struct = set(list(record_struct._fields))
-            auto_fields = ['uid', 'encrypt_all', 'encrypt_key', 'hash_id',
-                           'create_ts', 'update_ts', 'delete_ts',
-                           'is_encrypted']
-            col_nms = [col_nm for col_nm in record_struct
-                               if col_nm not in auto_fields]
-            col_vals = [getattr(p_data_row, col_nm) for col_nm in col_nms]
-            # Generate hash
-            p_data_row.hash_id = GF.hash_me("".join(col_vals))
-            # Set audit fields
-            p_data_row.update_ts = dttm.curr_utc
-            p_data_row.delete_ts = None
+            # Identify non-auto columns
+            rec_data = self.get_rec_data(p_tbl_nm, p_data_row)
+
+            # tbl_struct = GR.DBSCHEMA[p_tbl_nm]._fields
+            # col_nms = [col_nm for col_nm in tbl_struct
+            #                    if col_nm not in GR.auto._fields]
+            # col_vals = [getattr(p_data_row, col_nm) for col_nm in col_nms]
+
             # Add
             if p_db_action == "add":
                 if p_tbl_nm == "user":
                     # Handle encryption
                     p_data_row.is_encrypted = "True"
-                    if p_data_row.encrypt_key in (None, "None", "", b"None", b""):
+                    # Store encrypt_key on user record, but never return it
+                    # Always look it up and only use it internally for
+                    #  encryption and decryption
+                    if p_data_row.encrypt_key in (None, "None", "",
+                                                  b"None", b""):
                         raise Exception(ValueError,
                                         "No encryption key provided")
-                    for col_val in col_vals:
-                        col_nm = col_nms[col_vals.index(col_val)]
-                        encrypted_val = GE.encrypt_data(col_val,
-                                                    p_data_row.encrypt_key)
-                        setattr(p_data_row, col_nm, encrypted_val)
+                    for col_val in rec_data.col_vals:
+                        col_nm =\
+                            rec_data.col_nms[rec_data.col_vals.index(col_val)]
+                        encrypt_val = GE.encrypt_data(col_val,
+                                                      p_data_row.encrypt_key)
+                        setattr(p_data_row, col_nm, encrypt_val)
 
                 # Build SQL for an INSERT
                 p_data_row.uid = GF.get_uid()
+                p_data_row.hash_id = GF.hash_me("".join(rec_data.col_vals))
+                p_data_row.update_ts = dttm.curr_utc
+                p_data_row.delete_ts = None
                 p_data_row.create_ts = dttm.curr_utc
-                sql_cols = ", ".join(record_struct)
+                sql_cols = ", ".join(rec_data.tbl_struct)
                 sql_vals = ""
-                for col_nm in record_struct:
+                for col_nm in tbl_struct:
                     if col_nm == "encrypt_key":
                         sql_vals += "?, "
                     else:
@@ -434,11 +459,10 @@ class GmDbase(object):
             # Delete
 
             # Execute and commit SQL
-            self.disconnect_db()
             self.connect_db()
             cur = self.dbmain_conn.cursor()
             # pp(sql)
-            if "encrypt_key" in record_struct:
+            if "encrypt_key" in tbl_struct:
                 result = cur.execute(sql, [p_data_row.encrypt_key])
             else:
                 result = cur.execute(sql)
@@ -446,7 +470,9 @@ class GmDbase(object):
             return result
 
     def query_db(self,
-                 p_tbl_nm: GR.dbtable_t, p_filter: dict = None) -> object:
+                 p_tbl_nm: GR.dbtable_t,
+                 p_filter: dict = None,
+                 p_decrypt: bool = True) -> object:
         """ Run read-only queries against the main database.
             AND logic is is used when multiple colums are queried.
             No JOIN or OR logic supported.
@@ -455,13 +481,14 @@ class GmDbase(object):
 
         Args:
             p_tbl_nm (str): A valid table name.
-            p_filter (dict, optional): Required for friends.
-              For friends:
-                Indices from GR.FRIEND_FILTER. Specify 1..n columns, values.
-                Or, single col-nm with value = "LIST".
+            p_filter (dict, optional): Required for friends. For friends:
+                Using col-names from GR.FRIEND_FILTERspecify 1..n columns,
+                value pairs to list. Or, single col-nm with value = "LIST".
+            p_decrypt (bool, optional): If True, return decrypted data,
+                else return data as-is on the database.
 
         Returns:
-            object: a sqlite3 cursor
+            namedtuple: either GR.user_rec or GR.friends_rec
         """
         self.__validate_table_name(p_tbl_nm)
         fields = ", ".join(GR.DBSCHEMA[p_tbl_nm]._fields)
@@ -470,14 +497,21 @@ class GmDbase(object):
             sql = self.__friends_sql(p_filter, sql)
         elif p_tbl_nm == "user":
             sql += "WHERE delete_ts IS NULL;"
-        elif p_tbl_nm == "encrypt":
-            sql = self.__encrypt_sql(p_filter, sql)
         self.connect_db()
         cur = self.dbmain_conn.cursor()
+        result = cur.execute(sql)
 
-        # pp(sql)
+        # count number of rows being returned
 
-        return cur.execute(sql)
+        # for row in result:
+        #    for item in row:
+        #       (Handle decryption)
+
+        # design a standard results-returned package
+        #  that includes a reliable row count and
+        #  a collection of namedtuples using the
+        #  appropriate record format.
+        return result
 
     def delete_recs(self, p_uids: list, cur: object):
         """ Physically delete a row from friends table on main db.

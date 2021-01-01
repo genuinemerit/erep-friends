@@ -344,8 +344,17 @@ class ErepFriends(object):
         self.__set_erep_headers()
 
         # Does a user record already exist?
+        # @DEV
+        # Review this.. doesn't seem to be returning a record when there is one
+        # So, even though "rowcount" was -1, we DID have a data row returned.
+        # Looks like I need to either do a COUNT query or count the data rows returned myself.
         result = self.DB.query_db("user")
-        if result.rowcount == -1:
+
+        rowcount = 0
+        for row in result:
+            rowcount += 1
+            pp(row)
+        if rowcount < 1:
             # No, so...
             id_info, erep_email_id, erep_pass = self.__login_erep()
             encrypt_key = GE.set_key()
@@ -354,18 +363,16 @@ class ErepFriends(object):
             u_row.user_erep_email = erep_email_id
             u_row.user_erep_password = erep_pass
             u_row.encrypt_all = 'False'
+            # Don't create this here. Do it in the DB class,
+            # when a new user record is created.  Do not allow it
+            # to be updated. If we want to re-encrypt the entire
+            # database, that is a different process.
             u_row.encrypt_key = encrypt_key
             # Write user record
             self.DB.write_db("add", "user", u_row, None, True)
-
             # Get user eRep profile. It will be used to write friends record
             profile_rec = self.get_user_profile(id_info)
             # Next, also write a friends record for the user
-        else:
-            # User records found on DB. May need to check that they are correct, and/
-            # or provide an option to refresh them (e.g., new password, new mail id)
-            for row in result:
-                pp(row)
 
     def set_backup_db_path(self) -> str:
         """ Set path to backup database.
