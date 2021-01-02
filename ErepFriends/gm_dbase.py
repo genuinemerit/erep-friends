@@ -181,19 +181,22 @@ class GmDbase(object):
     def disconnect_db(self):
         """ Drop connection to main database at configured path.
         """
-        self.dbmain_conn.close()
+        if hasattr(self, 'dbmain_conn'):
+            self.dbmain_conn.close()
         self.dbmain_conn = None
 
     def disconnect_dbkup(self):
         """ Drop connection to backup database at configured path.
         """
-        self.dbkup_conn.close()
+        if hasattr(self, 'dbkup_conn'):
+            self.dbkup_conn.close()
         self.dbkup_conn = None
 
     def disconnect_darcv(self):
         """ Drop connection to archive database at configured path.
         """
-        self.dbarcv_conn.close()
+        if hasattr(self, 'dbarcv_conn'):
+            self.dbarcv_conn.close()
         self.dbarcv_conn = None
 
     def connect_db(self):
@@ -322,7 +325,7 @@ class GmDbase(object):
         """
         rec_data = namedtuple("rec_data", "tbl_struct col_nms col_vals")
         rec_data.tbl_struct = GR.DBSCHEMA[p_tbl_nm]._fields
-        rec_data.col_nms = [col_nm for col_nm in tbl_struct
+        rec_data.col_nms = [col_nm for col_nm in rec_data.tbl_struct
                                     if col_nm not in GR.auto._fields]
         rec_data.col_vals =\
             [getattr(p_data_row, col_nm) for col_nm in rec_data.col_nms]
@@ -373,8 +376,6 @@ class GmDbase(object):
                 - Encrypt tags/keys cannot be deleted if they are in use on
                   any active databases.
                 - Encrypt key is generated when adding a user row
-                - Why not use the hash-id as the PK? Do I really need UID?
-                  -- Yeah, I guess for being able to trace changes.
         Args:
             p_db_action (string, Literal): 'add', 'upd', or 'del'
             p_tbl_nm (string, Literal): 'encrypt', 'user', or 'friends'
@@ -408,42 +409,26 @@ class GmDbase(object):
             return False
         if p_db_action in ("add", "upd"):
             dttm = GF.get_dttm()
-            # Identify non-auto columns
             rec_data = self.get_rec_data(p_tbl_nm, p_data_row)
-
-            # tbl_struct = GR.DBSCHEMA[p_tbl_nm]._fields
-            # col_nms = [col_nm for col_nm in tbl_struct
-            #                    if col_nm not in GR.auto._fields]
-            # col_vals = [getattr(p_data_row, col_nm) for col_nm in col_nms]
-
-            # Add
             if p_db_action == "add":
-                if p_tbl_nm == "user":
-                    # Handle encryption
-                    p_data_row.is_encrypted = "True"
-                    # Store encrypt_key on user record, but never return it
-                    # Always look it up and only use it internally for
-                    #  encryption and decryption
-                    if p_data_row.encrypt_key in (None, "None", "",
-                                                  b"None", b""):
-                        raise Exception(ValueError,
-                                        "No encryption key provided")
-                    for col_val in rec_data.col_vals:
-                        col_nm =\
-                            rec_data.col_nms[rec_data.col_vals.index(col_val)]
-                        encrypt_val = GE.encrypt_data(col_val,
-                                                      p_data_row.encrypt_key)
-                        setattr(p_data_row, col_nm, encrypt_val)
-
                 # Build SQL for an INSERT
                 p_data_row.uid = GF.get_uid()
                 p_data_row.hash_id = GF.hash_me("".join(rec_data.col_vals))
                 p_data_row.update_ts = dttm.curr_utc
                 p_data_row.delete_ts = None
                 p_data_row.create_ts = dttm.curr_utc
+                if p_tbl_nm == "user":
+                    p_data_row.is_encrypted = "True"
+                    p_data_row.encrypt_key = GE.set_key()
+                    for col_val in rec_data.col_vals:
+                        col_nm =\
+                            rec_data.col_nms[rec_data.col_vals.index(col_val)]
+                        encrypt_val = GE.encrypt_data(col_val,
+                                                      p_data_row.encrypt_key)
+                        setattr(p_data_row, col_nm, encrypt_val)
                 sql_cols = ", ".join(rec_data.tbl_struct)
                 sql_vals = ""
-                for col_nm in tbl_struct:
+                for col_nm in rec_data.tbl_struct:
                     if col_nm == "encrypt_key":
                         sql_vals += "?, "
                     else:
@@ -462,7 +447,7 @@ class GmDbase(object):
             self.connect_db()
             cur = self.dbmain_conn.cursor()
             # pp(sql)
-            if "encrypt_key" in tbl_struct:
+            if "encrypt_key" in rec_data.tbl_struct:
                 result = cur.execute(sql, [p_data_row.encrypt_key])
             else:
                 result = cur.execute(sql)
@@ -499,7 +484,34 @@ class GmDbase(object):
             sql += "WHERE delete_ts IS NULL;"
         self.connect_db()
         cur = self.dbmain_conn.cursor()
-        result = cur.execute(sql)
+
+        pp(("query sql", sql))
+
+        cur_result = cur.execute(sql)
+
+        row_struct = GR.DBSCHEMA[p_tbl_nm]
+        row_fields = row_struct._fields
+        result_list = list()
+        pp(("row_struct._fields", row_struct._fields))
+        rowcount = 0
+        for row in cur_result:
+            for col in row:
+                setattr(row_struct, row_fields[row.index(col)], col)
+            if row_struct.uid != None:
+                pp(("row_struct.uid", row_struct.uid))
+                pp(("row_struct[0]", row_struct[0]))
+                rowcount +=1
+                result_list.append(row_struct)
+        # For some reason it is treating the namedtuple
+        #  as type (Literal) rather than a tuple, even
+        #  though it is taking the assignment OK. Not sure why.
+        # @DEV
+        #  Look into using dataclasses instead of namedtuples
+
+        pp(("result_list", result_list))
+                # Now decrypt if is_encrypted == 'True'
+
+        pp(("manual rowcount", rowcount))
 
         # count number of rows being returned
 
@@ -511,7 +523,7 @@ class GmDbase(object):
         #  that includes a reliable row count and
         #  a collection of namedtuples using the
         #  appropriate record format.
-        return result
+        return (rowcount, result_list)
 
     def delete_recs(self, p_uids: list, cur: object):
         """ Physically delete a row from friends table on main db.
