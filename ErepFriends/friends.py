@@ -1,14 +1,13 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
-Module:    erep_friends.py
-Class:     ErepFriends/0  inherits object
+Module:    friends.py
+Class:     Friends/0  inherits object
 Author:    PQ <pq_rfw @ pm.me>
 """
 import fnmatch
 import getpass
 import json
-# import logging
 import re
 import sys
 import time
@@ -18,29 +17,24 @@ from os import listdir, mkdir, path
 import requests
 import tkinter as tk
 from bs4 import BeautifulSoup as bs
-# from erepublik import Citizen, constants, utils
 from pathlib import Path
-# from PIL import Image, ImageTk
 from pprint import pprint as pp        # noqa: F401
 from pytz import all_timezones
 from tkinter import messagebox, ttk
 from tornado.options import define, options
 
-from gm_dbase import GmDbase
-# from gm_functions import GmFunctions
-from gm_logger import GmLogger
-from gm_reference import GmReference
-from gm_encrypt import GmEncrypt
+from dbase import Dbase
+from logger import Logger
+from structs import Structs
 
-GR = GmReference()
-GE = GmEncrypt()
+GR = Structs()
 
 
-class ErepFriends(object):
+class Friends(object):
     """Friends list manager for eRepublik."""
 
     def __init__(self):
-        """Initialize ErepFriends object."""
+        """Initialize Friends object."""
         self.__set_environment()
 
         """
@@ -89,7 +83,7 @@ class ErepFriends(object):
             p_log_path (string): parent path to log file
         """
         cfg_txt = ""
-        for cfg_nm, cfg_val in GR.configs.items():
+        for cfg_nm, cfg_val in TY.configs.items():
             cfg_val = p_data_path if cfg_nm == 'data_path' else cfg_val
             cfg_val = p_bkup_db_path if cfg_nm == 'bkup_db_path' else cfg_val
             cfg_val = p_arcv_db_path if cfg_nm == 'arcv_db_path' else cfg_val
@@ -128,9 +122,9 @@ class ErepFriends(object):
               if main DB does not already exist.
 
             Sets:
-                self.DB (object): instantiates GmDbase class
+                self.DB (object): instantiates Dbase class
         """
-        self.DB = GmDbase()
+        self.DB = Dbase()
         self.DB.config_db(self.opt.db_name, self.opt.data_path,
                           self.opt.bkup_db_path, self.opt.arcv_db_path)
         main_db_file =\
@@ -142,16 +136,16 @@ class ErepFriends(object):
         """ Assign log file location
 
             Sets:
-                self.LOG (object): instance of GmLogger class
+                self.LOG (object): instance of Logger class
         """
         self.logme = False
         if self.opt.log_path not in (None, "None", ""):
             log_level = self.opt.log_level
-            self.logme = True if log_level in list(GR.LOGLEVEL.keys())\
+            self.logme = True if log_level in list(TY.LOGLEVEL.keys())\
                               else False
             log_file =\
                 path.join(self.opt.log_path, self.opt.log_name)
-            self.LOG = GmLogger(log_file, log_level, self.opt.local_tz)
+            self.LOG = Logger(log_file, log_level, self.opt.local_tz)
             self.LOG.set_logs()
             if self.logme:
                 self.LOG.write_log("INFO",
@@ -244,7 +238,7 @@ class ErepFriends(object):
             self.__logout_erep()
         return response_text
 
-    def __get_user_and_session_info(self, response_text) -> GR.NamedTuple:
+    def __get_user_and_session_info(self, response_text) -> TY.NamedTuple:
         """ Extract token, ID and name from response text
 
         Args:
@@ -325,11 +319,11 @@ class ErepFriends(object):
             raise Exception(EnvironmentError, "Python 3 is required.\n"
                 "Your Python version is v{}.{}.{}".format(*sys.version_info))
 
-        data_path = path.abspath(path.realpath(GR.configs["data_path"]))
+        data_path = path.abspath(path.realpath(TY.configs["data_path"]))
         if not Path(data_path).exists():
             mkdir(data_path)
 
-        cfg_file_path = path.join(data_path, GR.configs["cfg_file_name"])
+        cfg_file_path = path.join(data_path, TY.configs["cfg_file_name"])
         if not Path(cfg_file_path).exists():
             bkup_db_path = self.set_backup_db_path()
             arcv_db_path = self.set_archive_db_path()
@@ -352,7 +346,7 @@ class ErepFriends(object):
         if rowcount < 1:
             # No, so...
             id_info, erep_email_id, erep_pass = self.__login_erep()
-            u_row = GR.user_rec
+            u_row = TY.user_rec
             u_row.user_erep_profile_id = id_info.profile_id
             u_row.user_erep_email = erep_email_id
             u_row.user_erep_password = erep_pass
@@ -375,7 +369,7 @@ class ErepFriends(object):
         Returns:
             string: full parent path to backup db or 'None'
         """
-        db_path = GR.configs["bkup_db_path"]
+        db_path = TY.configs["bkup_db_path"]
         while db_path in (None, "None", ""):
             print("\nEnter location for Backup database or 'n' for no backups:")
             db_path = input()
@@ -393,7 +387,7 @@ class ErepFriends(object):
         Returns:
             string: full parent path to archive db or 'None'
         """
-        db_path = GR.configs["arcv_db_path"]
+        db_path = TY.configs["arcv_db_path"]
         while db_path in (None, "None", ""):
             print("\nEnter location for Archive database or 'n' for no purge/archive:")
             db_path = input()
@@ -413,7 +407,7 @@ class ErepFriends(object):
         Returns:
             string: POSIX/Olson time zone name or 'None'
         """
-        local_tz = GR.configs["local_tz"]
+        local_tz = TY.configs["local_tz"]
         while local_tz in (None, "None", ""):
             print("\nEnter localhost Time Zone in POSIX/Olson format or 'n' to skip it:")
             local_tz = input()
@@ -422,7 +416,7 @@ class ErepFriends(object):
                 print(  "Try again or 'n' to skip it.")
                 local_tz = ""
         if local_tz not in all_timezones:
-            local_tz = GR.configs["local_tz"]
+            local_tz = TY.configs["local_tz"]
         return local_tz
 
     def set_log_file_path(self) -> str:
@@ -436,7 +430,7 @@ class ErepFriends(object):
         Returns:
             string: full parent path to log file or 'None'
         """
-        log_path = GR.configs["log_path"]
+        log_path = TY.configs["log_path"]
         while log_path in (None, "None", ""):
             print("\nEnter location for Log file or 'n' for no logs:")
             log_path = input()
@@ -446,7 +440,7 @@ class ErepFriends(object):
                 mkdir(log_path)
         return log_path
 
-    def get_user_profile(self,p_id_info: GR.NamedTuple) -> GR.NamedTuple:
+    def get_user_profile(self,p_id_info: TY.NamedTuple) -> TY.NamedTuple:
         """ Retrieve profile for user from eRepublik.
             Get the user's eRepublik profile ID from config file.
             Set the user name and grab the user's avatar file.
@@ -458,7 +452,7 @@ class ErepFriends(object):
             ValueError if profile ID returns 404 from eRepublik
 
         Returns:
-            namedtuple: GR.friends_rec
+            namedtuple: TY.friends_rec
 
         @DEV put a time marker N on the archived profile data file, so
             that if t > N, we refresh it from an eRep call. (or on-demand
@@ -480,7 +474,7 @@ class ErepFriends(object):
             with open(profile_file, "w") as f:
                 f.write(str(erep_response.text))            # save a copy
 
-        profile_rec = GR.friends_rec
+        profile_rec = TY.friends_rec
         profile_rec.uid = None
         profile_rec.profile_id = p_id_info.profile_id
         profile_rec.name = profile_data["citizen"]["name"]
@@ -595,7 +589,7 @@ class ErepFriends(object):
 
 
     def ___set_graphic_interface(self):
-        """ Construct GUI widgets for ErepFriends app
+        """ Construct GUI widgets for Friends app
         """
         # Window widgets
         self.win_emsg = tk.Tk()     # "root"
@@ -702,7 +696,7 @@ class ErepFriends(object):
             self.win_save.deiconify()
 
     def exit_emsg(self):
-        """ Quit the erep_friends app """
+        """ Quit the friends app """
         if self.erep_csrf_token is not None:
             self.disconnect()
         self.win_ef.quit()
@@ -862,7 +856,7 @@ class ErepFriends(object):
 
     def make_root_emsg_window(self):
         """
-        Construct the erep_friends app window
+        Construct the friends app window
         """
         self.win_ef.title(self.opt.w_title)
         self.win_ef.geometry('900x600+100+100')
@@ -944,5 +938,5 @@ class ErepFriends(object):
 #======================
 # If launched from command line...
 if __name__ == "__main__":
-    EM = ErepFriends()
+    EM = Friends()
 #    EM.win_ef.mainloop()

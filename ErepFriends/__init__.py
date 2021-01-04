@@ -1,6 +1,6 @@
 # Import local classes for ErepFriends
-from ErepFriends.gm_reference import GmReference
-from ErepFriends.gm_functions import GmFunctions
-from ErepFriends.gm_logger import GmLogger
-from ErepFriends.gm_encrypt import GmEncrypt
-from ErepFriends.gm_dbase import GmDbase
+from ErepFriends.structs import Structs
+from ErepFriends.utils import Utils
+from ErepFriends.logger import Logger
+from ErepFriends.cipher import Cipher
+from ErepFriends.dbase import Dbase
