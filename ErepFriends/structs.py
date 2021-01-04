@@ -124,6 +124,9 @@ class Structs(object):
         w_txt_disconnected: str = "You are now logged out of eRepublik"
         w_txt_login_failed: str =\
             "eRep login failed. Please check credentials"
+        fields = [col_nm for col_nm in self.__dict__
+                    if not callable(getattr(self, col_nm))
+                     and col_nm[:2] != "__"]
 
     @dataclass
     class AuditFields:

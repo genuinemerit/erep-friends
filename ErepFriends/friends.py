@@ -1,6 +1,9 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
+# coding: utf-8     # noqa: E902
+#!/usr/bin/python3  # noqa: E265
+
 """
+Manage eRepublik friends list.
+
 Module:    friends.py
 Class:     Friends/0  inherits object
 Author:    PQ <pq_rfw @ pm.me>
@@ -11,23 +14,23 @@ import json
 import re
 import sys
 import time
+import tkinter as tk
 from collections import namedtuple
 from os import listdir, mkdir, path
+from pathlib import Path
+from pprint import pprint as pp  # noqa: F401
+from tkinter import messagebox, ttk
 
 import requests
-import tkinter as tk
 from bs4 import BeautifulSoup as bs
-from pathlib import Path
-from pprint import pprint as pp        # noqa: F401
 from pytz import all_timezones
-from tkinter import messagebox, ttk
 from tornado.options import define, options
 
 from dbase import Dbase
 from logger import Logger
 from structs import Structs
 
-GR = Structs()
+ST = Structs()
 
 
 class Friends(object):
@@ -35,10 +38,10 @@ class Friends(object):
 
     def __init__(self):
         """Initialize Friends object."""
-        self.__set_environment()
+        self.set_environment()
 
         """
-        self.__set_erep_headers()
+        self.set_erep_headers()
 
         # This is in-memory text and scrub
         # Maybe want to separate this from pure GUI logic
@@ -63,16 +66,14 @@ class Friends(object):
         self.___set_graphic_interface()
         """
 
-    def __repr__(self):
-        """ Print description of class.
-            TODO once code settles down
-        """
-        pass
-
-    def __create_config_file(self, p_cfg_file_path: str,
-            p_data_path: str, p_bkup_db_path: str,
-            p_arcv_db_path: str, p_local_tz: str, p_log_path: str,):
-        """ Define and create config file.
+    def create_config_file(self,
+                           p_cfg_file_path: str,
+                           p_data_path: str,
+                           p_bkup_db_path: str,
+                           p_arcv_db_path: str,
+                           p_local_tz: str,
+                           p_log_path: str,):
+        """Define and create config file.
 
         Args:
             p_cfg_file_path (string): full path to config file
@@ -83,7 +84,8 @@ class Friends(object):
             p_log_path (string): parent path to log file
         """
         cfg_txt = ""
-        for cfg_nm, cfg_val in TY.configs.items():
+        for cfg_nm in ST.ConfigFields.fields:
+            cfg_val = getattr(ST.ConfigFields, cfg_nm)
             cfg_val = p_data_path if cfg_nm == 'data_path' else cfg_val
             cfg_val = p_bkup_db_path if cfg_nm == 'bkup_db_path' else cfg_val
             cfg_val = p_arcv_db_path if cfg_nm == 'arcv_db_path' else cfg_val
@@ -94,36 +96,20 @@ class Friends(object):
             cfgf.write(cfg_txt)
         cfgf.close()
 
-    def __set_options(self, p_cfg_file_path: str):
-        """ Get login info and other settings from config file.
+    def set_options(self, p_cfg_file_path: str):
+        """Load settings from config file.
 
         Args:
             p_cfg_file_path (string): full path to config file
-
-        Sets:
-            self.opt (namedtuple): name.value of all options
         """
         self.opt = None
-        opt_names = [
-            'db_name',
-            'data_path', 'bkup_db_path', 'arcv_db_path',
-            'log_path', 'log_level', 'log_name', 'local_tz',
-            'erep_url',
-            'w_txt_title', 'w_txt_greet',
-            'w_txt_connected', 'w_txt_disconnected',
-            'w_txt_login_failed']
-        for opt_nm in opt_names:
+        for opt_nm in ST.ConfigFields.fields:
             define(opt_nm)
         options.parse_config_file(p_cfg_file_path)
         self.opt = options
 
-    def __configure_database(self):
-        """ Configure DB object and create databases
-              if main DB does not already exist.
-
-            Sets:
-                self.DB (object): instantiates Dbase class
-        """
+    def configure_database(self):
+        """Instantiate Dbase object. Create databases."""
         self.DB = Dbase()
         self.DB.config_db(self.opt.db_name, self.opt.data_path,
                           self.opt.bkup_db_path, self.opt.arcv_db_path)
@@ -132,55 +118,135 @@ class Friends(object):
         if not Path(main_db_file).exists():
             self.DB.create_db()
 
-    def __enable_logging(self):
-        """ Assign log file location
-
-            Sets:
-                self.LOG (object): instance of Logger class
-        """
+    def enable_logging(self):
+        """Assign log file location. Instantiate Logger object."""
         self.logme = False
         if self.opt.log_path not in (None, "None", ""):
-            log_level = self.opt.log_level
-            self.logme = True if log_level in list(TY.LOGLEVEL.keys())\
-                              else False
+            self.logme = False if self.opt.log_level == ST.LOGLEVEL.NOTSET\
+                               else True
             log_file =\
                 path.join(self.opt.log_path, self.opt.log_name)
-            self.LOG = Logger(log_file, log_level, self.opt.local_tz)
-            self.LOG.set_logs()
+            self.LOG = Logger(log_file, self.opt.log_level, self.opt.local_tz)
+            self.LOG.set_log()
             if self.logme:
-                self.LOG.write_log("INFO",
-                                   "Log file location: {}".format(log_file))
-                self.LOG.write_log("INFO",
-                                   "Log level: {}".format(log_level))
+                msg = "Log file location: {}".format(log_file)
+                self.LOG.write_log(ST.LOGLEVEL.INFO, msg)
+                msg = "Log level: {}".format(self.opt.log_level)
+                self.LOG.write_log(ST.LOGLEVEL.INFO, msg)
 
-    def __set_erep_headers(self):
-        """ Set request headers for eRepublik calls.
+    def set_backup_db_path(self) -> str:
+        """Set path to backup database.
 
+        No scheduled backups yet. Do backups on demand.
+        No rolling backups. A single backup db overwritten whenever
+         a backup is taken.
+        Suitable to use as recovery for main db by simply copying
+         the backup file to the main db location.
         @DEV
-            - Provide option to use lang other than EN?
-            - Review User-Agent list against options used in erepublik class
+            Replace CLI input with a GUI
 
-        Sets:
-            self.erep_csrf_token (string): used to confirm login, session
-            self.erep_rqst (object): requests Session() object
+        Returns:
+            string: full parent path to backup db or 'None'
         """
+        db_path = ST.ConfigFields.bkup_db_path
+        while db_path in (None, "None", ""):
+            print("\nEnter backup location or 'n':")
+            db_path = input()
+        if db_path[:1].lower() != 'n':
+            db_path = path.abspath(path.realpath(db_path))
+            if not Path(db_path).exists():
+                mkdir(db_path)
+        return db_path
+
+    def set_archive_db_path(self) -> str:
+        """Set path to archive database.
+
+        This is where we take a db copy prior to running a purge.
+        @DEV
+            Replace CLI input with a GUI
+
+        Returns:
+            string: full parent path to archive db or 'None'
+        """
+        db_path = ST.ConfigFields.arcv_db_path
+        while db_path in (None, "None", ""):
+            print("\nEnter archive DB location or 'n':")
+            db_path = input()
+        if db_path[:1].lower() != 'n':
+            db_path = path.abspath(path.realpath(db_path))
+            if not Path(db_path).exists():
+                mkdir(db_path)
+        return db_path
+
+    def set_local_time_zone(self) -> str:
+        """Get localhost timezone.
+
+        Since it is difficult (for me!) to get localhost time zone in
+        POSIX/Olson format, ask user to input it.  This has little effect
+        on anything, just to display it in log session header.
+        @DEV
+            Replace CLI input with a GUI.
+            Try doing a reverse lookup on the Olson database, or get
+            some approximnation of host tz automagically.
+
+        Returns:
+            string: POSIX/Olson time zone name or 'None'
+        """
+        local_tz = ST.configs["local_tz"]
+        while local_tz in (None, "None", ""):
+            print("\nEnter localhost Time Zone or 'n':")
+            local_tz = input()
+            if local_tz not in all_timezones:
+                print("\n{} is not a valid Time Zone name.".format(local_tz))
+                print("  Try again.")
+                local_tz = ""
+        if local_tz not in all_timezones:
+            local_tz = ST.ConfigFields.local_tz
+        return local_tz
+
+    def set_log_file_path(self) -> str:
+        """Set path to log file.
+
+        No rolling log mechanism in place yet.
+        Manually backup or delete logs if desired.
+        As long as log file path and name are defined,
+            system creates a new log file if needed.
+        @DEV
+            Replace CLI input with a GUI
+
+        Returns:
+            string: full parent path to log file or 'None'
+        """
+        log_path = ST.ConfigFields.log_path
+        while log_path in (None, "None", ""):
+            print("\nEnter location for Log file or 'n':")
+            log_path = input()
+        if log_path[:1].lower() != 'n':
+            log_path = path.abspath(path.realpath(log_path))
+            if not Path(log_path).exists():
+                mkdir(log_path)
+        return log_path
+
+    def set_erep_headers(self):
+        """Set request headers for eRepublik calls."""
         self.erep_csrf_token = None
         self.erep_rqst = requests.Session()
         self.erep_rqst.headers = None
         self.erep_rqst.headers = {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',   # noqa: E501
             'Accept-Encoding': 'gzip,deflate,sdch',
             'Accept-Language': 'en-US,en;q=0.8',
             'Connection': 'keep-alive',
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/31.0.1650.63 Chrome/31.0.1650.63 Safari/537.36'}
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/31.0.1650.63 Chrome/31.0.1650.63 Safari/537.36'}  # noqa: E501
 
-    def __get_local_login_file(self):
-        """ Use local copy of login response if available
+    def get_local_login_file(self):
+        """Use local copy of login response if available.
 
         Returns:
             text or bool: full response.text from eRep login GET  or  False
         """
-        login_file = path.abspath(path.join(self.opt.log_path, "login_response"))
+        login_file = path.abspath(path.join(self.opt.log_path,
+                                            "login_response"))
         response_text = False
         if Path(login_file).exists():
             with open(login_file) as lf:
@@ -188,15 +254,13 @@ class Friends(object):
                 lf.close()
         return response_text
 
-    def __logout_erep(self):
-        """ Logout from eRepublik
-        Totally guessing here.
-        We get a 302 response here, which is good. But not sure if it is really terminating the user session.
-        formdata = {'citizen_email': self.opt.erep_mail_id,
-                    'citizen_password': self.opt.erep_pwd,
-                    '_token': self.erep_csrf_token,
-                    "remember": '1',
-                    'commit': 'Logout'}
+    def logout_erep(self):
+        """Logout from eRepublik.
+
+        Totally guessing here. We get a 302 response here, so good.
+        Seems to imply it is doing something - redirecting to splash
+          page probably.
+        But not sure if it is really terminating the user session?
         """
         formdata = {'_token': self.erep_csrf_token,
                     "remember": '1',
@@ -204,16 +268,18 @@ class Friends(object):
         erep_logout = self.erep_rqst.post(self.opt.erep_url + "/logout",
                                           data=formdata, allow_redirects=True)
         if self.logme:
-            self.LOG.write_log('INFO', "user logout status code: "
-                               "{}".format(erep_logout.status_code))
+            msg = "logout status code: {}".format(erep_logout.status_code)
+            self.LOG.write_log(ST.LOGLEVEL.INFO, msg)
         if erep_logout.status_code == 302:
             self.erep_csrf_token = None
             self.erep_rqst.get(self.opt.erep_url)
             # > GUI stuff:
             # self.status_text.config(text = self.opt.w_txt_disconnected)
 
-    def __get_login_data_from_erep(self, p_email, p_password) -> str:
-        """ Login to eRepublik to confirm credentials and get profile ID
+    def get_login_data_from_erep(self,
+                                 p_email: str,
+                                 p_password: str) -> str:
+        """Login to eRepublik to confirm credentials and get profile ID.
 
         Returns:
             text or bool: full response.text from eRep login GET  or  False
@@ -223,30 +289,31 @@ class Friends(object):
                     'citizen_password': p_password,
                     "remember": '1', 'commit': 'Login'}
         erep_login = self.erep_rqst.post(self.opt.erep_url + "/login",
-                                        data=formdata,
-                                        allow_redirects=False)
+                                         data=formdata,
+                                         allow_redirects=False)
         if self.logme:
-            self.LOG.write_log('INFO', "user login status code: " +\
-                            "{}".format(erep_login.status_code))
+            msg = "login status code: {}".format(erep_login.status_code)
+            self.LOG.write_log(ST.LOGLEVEL.INFO, msg)
         if erep_login.status_code == 302:
             erep_response = self.erep_rqst.get(self.opt.erep_url)
             response_text = erep_response.text
-            # DEBUG
-            with open(path.abspath(path.join(self.opt.log_path, "login_response")),
-                    "w") as f:
+            with open(path.abspath(path.join(self.opt.log_path,
+                                             "login_response")), "w") as f:
                 f.write(response_text)
-            self.__logout_erep()
+            self.logout_erep()
         return response_text
 
-    def __get_user_and_session_info(self, response_text) -> TY.NamedTuple:
-        """ Extract token, ID and name from response text
+    def get_user_and_session_info(self, response_text: str):
+        """Extract token, ID and name from response text.
 
         Args:
             response_text (string): full response text from eRep login GET
 
         Returns:
             namedtuple: id_info.. profile_id, user_name
+            @DEV change to a dataclass
         """
+        # Maybe replace this with a dataclass?
         id_info = namedtuple("id_info", "profile_id user_name")
         erep_soup = bs(response_text, features="html.parser")
         soup_scripts = erep_soup.find_all("script")
@@ -255,7 +322,7 @@ class Friends(object):
         # \s is an invalid escape sequence
         # Can probably do this just as easily with a split
         # I don't think beautifulsoup is really needed at all
-        regex = re.compile("csrfToken\s*:\s*\'([a-z0-9]+)\'")
+        regex = re.compile("csrfToken\s*:\s*\'([a-z0-9]+)\'")  # noqa: W605
         self.erep_csrf_token = regex.findall(soup_script)[0]
         # Get user profile ID
         p_log = soup_script.split('"citizen":{"citizenId":')
@@ -266,87 +333,80 @@ class Friends(object):
         p_log = p_log[1].split(",")
         id_info.user_name = p_log[0].replace('"', '')
         if self.logme and self.opt.log_level == 'DEBUG':
-            self.LOG.write_log('INFO', "CSRF Token:\t" +\
-                            "{}".format(self.erep_csrf_token))
-            self.LOG.write_log('INFO', "user login response:\n" +\
-                            "{}".format(soup_script))
+            msg = "CSRF Token:\t{}".format(self.erep_csrf_token)
+            self.LOG.write_log(ST.LOGLEVEL.INFO, msg)
+            msg = "Login response:\n{}".format(soup_script)
+            self.LOG.write_log(ST.LOGLEVEL.INFO, msg)
         return id_info
 
-    def __login_erep(self) -> tuple:
-        """ Connect to eRepublik using valid email and password
+    def login_erep(self) -> tuple:
+        """Connect to eRepublik using valid email and password.
 
-        Sets:
-            self.erep_csrf_token (string): CSRF token assigned by login
         Returns:
             tuple: (namedtuple: id_info, erep_mail_id, erep_pass)
-
-        @DEV Set some kind of time-based marker N on the local login data file.
-             Do a regular login if the local file is older than t = N
         """
         if self.erep_csrf_token is not None:
-            raise Exception(ConnectionError, "Already logged in.\n"
-                                              "Run logout method.")
+            msg = "Already logged in.\nRun logout method."
+            raise Exception(ConnectionError, msg)
         else:
             # Establish if user credentials work
-            print("\nEnter the user's eRepublik Email Login ID and Password to enable"
+            print("\nEnter eRepublik Email Login ID and Password to enable"
                   "gathering full friends list.")
             print("Password won't display on the screen."
                   "Both Email and Password are stored encrypted.")
             erep_email_id = input("eRep Email Login ID: ")
             erep_pass = getpass.getpass("eRep Password: ")
-            response_text = self.__get_local_login_file()
+            response_text = self.get_local_login_file()
             if not response_text:
-                response_text = self.__get_login_data_from_erep(erep_email_id,
-                                                                erep_pass)
+                response_text = self.get_login_data_from_erep(erep_email_id,
+                                                              erep_pass)
                 if not response_text:
-                    response_text = self.__get_local_login_file()
+                    response_text = self.get_local_login_file()
                     if not response_text:
-                        # login failed and no archive copy of a good login response
-                        raise Exception(ConnectionError, "Login failed.\n"
-                                                         "Check credentials.")
-            id_info = self.__get_user_and_session_info(response_text)
+                        msg = "Login failed.\nCheck credentials."
+                        raise Exception(ConnectionError, msg)
+            id_info = self.get_user_and_session_info(response_text)
             return (id_info, erep_email_id, erep_pass)
 
-    def __set_environment(self):
-        """ Handle basic set-up as needed.
-            Complete necessary set-up steps before proceeding
+    def set_environment(self):
+        """Handle basic set-up as needed.
+
+        Complete necessary set-up steps before proceeding
         @DEV
             Provide explain/help  of what goes on here.
             Optional files can also be set up later if desired.
             Replace console inputs with GUI.
         """
         if sys.version_info[:2] < (3, 6):
-            raise Exception(EnvironmentError, "Python 3 is required.\n"
-                "Your Python version is v{}.{}.{}".format(*sys.version_info))
+            msg = "Python 3 is required.\n"
+            msg += "Your version is v{}.{}.{}".format(*sys.version_info)
+            raise Exception(EnvironmentError, msg)
 
-        data_path = path.abspath(path.realpath(TY.configs["data_path"]))
+        data_path = path.abspath(path.realpath(ST.ConfigFields.data_path))
         if not Path(data_path).exists():
             mkdir(data_path)
 
-        cfg_file_path = path.join(data_path, TY.configs["cfg_file_name"])
+        cfg_file_path = path.join(data_path, ST.ConfigFields.cfg_file_name)
         if not Path(cfg_file_path).exists():
             bkup_db_path = self.set_backup_db_path()
             arcv_db_path = self.set_archive_db_path()
             local_tz = self.set_local_time_zone()
             log_path = self.set_log_file_path()
-            self.__create_config_file(cfg_file_path, data_path,
-                                      bkup_db_path, arcv_db_path,
-                                      local_tz, log_path)
-        self.__set_options(cfg_file_path)
-        self.__configure_database()
-        self.__enable_logging()
-        self.__set_erep_headers()
+            self.create_config_file(cfg_file_path, data_path,
+                                    bkup_db_path, arcv_db_path,
+                                    local_tz, log_path)
+        self.set_options(cfg_file_path)
+        self.configure_database()
+        self.enable_logging()
+        self.set_erep_headers()
 
         # Does a user record already exist?
-        # @DEV
-        # Review this.. doesn't seem to be returning a record when there is one
-        # So, even though "rowcount" was -1, we DID have a data row returned.
-        # Looks like I need to either do a COUNT query or count the data rows returned myself.
         rowcount, data_rows = self.DB.query_db("user")
         if rowcount < 1:
             # No, so...
-            id_info, erep_email_id, erep_pass = self.__login_erep()
-            u_row = TY.user_rec
+            # Use a dict instead of a namedtuple when sending data to Dbase()
+            id_info, erep_email_id, erep_pass = self.login_erep()
+            u_row = ST.user_rec
             u_row.user_erep_profile_id = id_info.profile_id
             u_row.user_erep_email = erep_email_id
             u_row.user_erep_password = erep_pass
@@ -354,96 +414,16 @@ class Friends(object):
             # Write user record
             self.DB.write_db("add", "user", u_row, None, True)
             # Get user eRep profile. It will be used to write friends record
-            profile_rec = self.get_user_profile(id_info)
+            f_rec = self.get_user_profile(id_info)
+            pp(f_rec)
             # Next, also write a friends record for the user
 
-    def set_backup_db_path(self) -> str:
-        """ Set path to backup database.
-            No scheduled backups yet. Do backups on demand.
-            No rolling backups. A single backup db overwritten whenever
-              a backup is taken.
-            Suitable to use as recovery for main db by simply copying
-              the backup file to the main db location.
-            @DEV
-                Replace CLI input with a GUI
-        Returns:
-            string: full parent path to backup db or 'None'
-        """
-        db_path = TY.configs["bkup_db_path"]
-        while db_path in (None, "None", ""):
-            print("\nEnter location for Backup database or 'n' for no backups:")
-            db_path = input()
-        if db_path[:1].lower() != 'n':
-            db_path = path.abspath(path.realpath(db_path))
-            if not Path(db_path).exists():
-                mkdir(db_path)
-        return db_path
+    def get_user_profile(self,
+                         p_id_info: ST.Types.t_namedtuple):
+        """Retrieve profile for user from eRepublik.
 
-    def set_archive_db_path(self) -> str:
-        """ Set path to archive database.
-            This is where we take a db copy prior to running a purge.
-            @DEV
-                Replace CLI input with a GUI
-        Returns:
-            string: full parent path to archive db or 'None'
-        """
-        db_path = TY.configs["arcv_db_path"]
-        while db_path in (None, "None", ""):
-            print("\nEnter location for Archive database or 'n' for no purge/archive:")
-            db_path = input()
-        if db_path[:1].lower() != 'n':
-            db_path = path.abspath(path.realpath(db_path))
-            if not Path(db_path).exists():
-                mkdir(db_path)
-        return db_path
-
-    def set_local_time_zone(self) -> str:
-        """ Since it is difficult (for me!) to get localhost time zone in
-             POSIX/Olson format, ask user to input it.  This has little effect
-             on anything, just to display it in log session header.
-            @DEV
-                Replace CLI input with a GUI
-                Try doing a reverse lookup on the Olson database
-        Returns:
-            string: POSIX/Olson time zone name or 'None'
-        """
-        local_tz = TY.configs["local_tz"]
-        while local_tz in (None, "None", ""):
-            print("\nEnter localhost Time Zone in POSIX/Olson format or 'n' to skip it:")
-            local_tz = input()
-            if local_tz not in all_timezones:
-                print("\n{} is not a valid Time Zone name.".format(local_tz))
-                print(  "Try again or 'n' to skip it.")
-                local_tz = ""
-        if local_tz not in all_timezones:
-            local_tz = TY.configs["local_tz"]
-        return local_tz
-
-    def set_log_file_path(self) -> str:
-        """ Set path to log file.
-            No rolling log mechanism in place yet.
-            Manually backup or delete logs if desired.
-            As long as log file path and name are defined,
-              system creates a new log file if needed.
-            @DEV
-                Replace CLI input with a GUI
-        Returns:
-            string: full parent path to log file or 'None'
-        """
-        log_path = TY.configs["log_path"]
-        while log_path in (None, "None", ""):
-            print("\nEnter location for Log file or 'n' for no logs:")
-            log_path = input()
-        if log_path[:1].lower() != 'n':
-            log_path = path.abspath(path.realpath(log_path))
-            if not Path(log_path).exists():
-                mkdir(log_path)
-        return log_path
-
-    def get_user_profile(self,p_id_info: TY.NamedTuple) -> TY.NamedTuple:
-        """ Retrieve profile for user from eRepublik.
-            Get the user's eRepublik profile ID from config file.
-            Set the user name and grab the user's avatar file.
+        Get the user's eRepublik profile ID from config file.
+        Set the user name and grab the user's avatar file.
 
         Args:
             p_id_info (namedtuple): (eprofile_id user_name)
@@ -452,15 +432,12 @@ class Friends(object):
             ValueError if profile ID returns 404 from eRepublik
 
         Returns:
-            namedtuple: TY.friends_rec
-
-        @DEV put a time marker N on the archived profile data file, so
-            that if t > N, we refresh it from an eRep call. (or on-demand
-            once GUI controls are in place). 
+            namedtuple: ST.friends_rec
+            @DEV use a dataclass instead
         """
         print('Gathering info about {}...'.format(p_id_info.user_name))
-        profile_file = path.abspath(path.join(self.opt.log_path,
-                        "profile_response_{}".format(p_id_info.profile_id)))
+        file_nm = "profile_response_{}".format(p_id_info.profile_id)
+        profile_file = path.abspath(path.join(self.opt.log_path, file_nm))
         if Path(profile_file).exists():
             with open(profile_file) as pf:
                 profile_data = json.loads(pf.read())   # convert to dict
@@ -469,80 +446,76 @@ class Friends(object):
                 "/main/citizen-profile-json/" + p_id_info.profile_id
             erep_response = requests.get(profile_url)       # returns JSON
             if erep_response.status_code == 404:
-                raise Exception(ValueError, "Invalid eRepublik Profile ID.")
+                msg = "Invalid eRepublik Profile ID."
+                raise Exception(ValueError, msg)
             profile_data = json.loads(erep_response.text)   # convert to dict
             with open(profile_file, "w") as f:
                 f.write(str(erep_response.text))            # save a copy
 
-        profile_rec = TY.friends_rec
-        profile_rec.uid = None
-        profile_rec.profile_id = p_id_info.profile_id
-        profile_rec.name = profile_data["citizen"]["name"]
-        profile_rec.is_alive = profile_data["citizen"]["is_alive"]
-        profile_rec.is_adult = profile_data["isAdult"]
-        profile_rec.avatar_link = profile_data["citizen"]["avatar"]
-        profile_rec.level = profile_data["citizen"]["level"]
-        profile_rec.xp =\
+        f_rec = ST.friends_rec
+        f_rec.profile_id = p_id_info.profile_id
+        f_rec.name = profile_data["citizen"]["name"]
+        f_rec.is_alive = profile_data["citizen"]["is_alive"]
+        f_rec.is_adult = profile_data["isAdult"]
+        f_rec.avatar_link = profile_data["citizen"]["avatar"]
+        f_rec.level = profile_data["citizen"]["level"]
+        f_rec.xp =\
             profile_data["citizenAttributes"]["experience_points"]
-        profile_rec.friends_count = profile_data["friends"]["number"]
-        profile_rec.achievements_count = len(profile_data["achievements"])
-        profile_rec.citizenship_country =\
+        f_rec.friends_count = profile_data["friends"]["number"]
+        f_rec.achievements_count = len(profile_data["achievements"])
+        f_rec.citizenship_country =\
             profile_data["location"]["citizenshipCountry"]["name"]
-        profile_rec.residence_city =\
+        f_rec.residence_city =\
             profile_data["city"]["residenceCity"]["name"]
-        profile_rec.residence_region =\
+        f_rec.residence_region =\
             profile_data["city"]["residenceCity"]["region_name"]
-        profile_rec.residence_country =\
+        f_rec.residence_country =\
             profile_data["city"]["residenceCity"]["country_name"]
-        profile_rec.is_in_congress = profile_data['isCongressman']
-        profile_rec.is_ambassador = profile_data['isAmbassador']
-        profile_rec.is_dictator = profile_data['isDictator']
-        profile_rec.is_country_president = profile_data['isPresident']
-        profile_rec.is_top_player = profile_data['isTopPlayer']
-        profile_rec.is_party_member = profile_data["isPartyMember"]
-        profile_rec.is_party_president = profile_data["isPartyPresident"]
-        profile_rec.party_name = profile_data["partyData"]["name"]
-        profile_rec.party_avatar_link =\
+        f_rec.is_in_congress = profile_data['isCongressman']
+        f_rec.is_ambassador = profile_data['isAmbassador']
+        f_rec.is_dictator = profile_data['isDictator']
+        f_rec.is_country_president = profile_data['isPresident']
+        f_rec.is_top_player = profile_data['isTopPlayer']
+        f_rec.is_party_member = profile_data["isPartyMember"]
+        f_rec.is_party_president = profile_data["isPartyPresident"]
+        f_rec.party_name = profile_data["partyData"]["name"]
+        f_rec.party_avatar_link =\
             "https:" + profile_data["partyData"]["avatar"]
-        profile_rec.party_orientation =\
+        f_rec.party_orientation =\
             profile_data["partyData"]["economical_orientation"]
-        profile_rec.party_url = self.opt.erep_url + "/party/" +\
+        f_rec.party_url = self.opt.erep_url + "/party/" +\
             profile_data["partyData"]["stripped_title"] + "-" +\
             str(profile_data["partyData"]["id"]) + "/1"
-        profile_rec.militia_name =\
+        f_rec.militia_name =\
             profile_data['military']['militaryUnit']['name']
-        profile_rec.militia_url = self.opt.erep_url +\
+        f_rec.militia_url = self.opt.erep_url +\
             "/military/military-unit/" +\
             str(profile_data['military']['militaryUnit']['id']) + "/overview"
-        profile_rec.militia_size =\
+        f_rec.militia_size =\
             profile_data['military']['militaryUnit']['member_count']
-        profile_rec.militia_avatar_link =\
+        f_rec.militia_avatar_link =\
             "https:" + profile_data['military']['militaryUnit']["avatar"]
-        profile_rec.military_rank =\
+        f_rec.military_rank =\
             profile_data['military']['militaryUnit']["militaryRank"]
-        profile_rec.aircraft_rank =\
+        f_rec.aircraft_rank =\
             profile_data['military']['militaryData']["aircraft"]["name"]
-        profile_rec.ground_rank =\
+        f_rec.ground_rank =\
             profile_data['military']['militaryData']["ground"]["name"]
-        profile_rec.newspaper_name =\
+        f_rec.newspaper_name =\
             profile_data['newspaper']['name']
-        profile_rec.newspaper_avatar_link =\
+        f_rec.newspaper_avatar_link =\
             "https:" + profile_data['newspaper']["avatar"]
-        profile_rec.newspaper_url = self.opt.erep_url + "/main/newspaper/" +\
+        f_rec.newspaper_url = self.opt.erep_url + "/main/newspaper/" +\
             profile_data['newspaper']["stripped_title"] + "-" +\
             str(profile_data['newspaper']["id"]) + "/1"
-        profile_rec.hash_id = None
-        profile_rec.create_ts = None
-        profile_rec.update_ts = None
-        profile_rec.delete_ts = None
-        profile_rec.is_encrypted = None
 
-        if self.logme and self.opt.log_level == "DEBUG":
-            self.LOG.write_log('DEBUG', "user_profile: {}".format(profile_data))
-        return profile_rec
+        if self.logme and self.opt.log_level == ST.LOGLEVEL.DEBUG:
+            msg = "user_profile: {}".format(profile_data)
+            self.LOG.write_log(ST.LOGLEVEL.DEBUG, msg)
+        return f_rec
 
 
-
+    ## XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
     ##  Code imported from "erep_messenger"  ###############################
 
     def send_message(self, profile_data):
@@ -665,7 +638,7 @@ class Friends(object):
         with open(file_path, "w") as f:
             f.write(self.id_list.get(1.0, tk.END))
         if self.logme:
-            self.LOG.write_log('INFO', "Citizens ID .list saved at: {}".format(file_path))
+            self.LOG.write_log(ST.LOGLEVEL.INFO, "Citizens ID .list saved at: {}".format(file_path))
 
         self.win_save.withdraw()
 

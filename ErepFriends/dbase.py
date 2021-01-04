@@ -1,4 +1,4 @@
-# coding: utf-8
+# coding: utf-8     # noqa: E902
 #!/usr/bin/python3  # noqa: E265
 
 """
