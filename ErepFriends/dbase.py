@@ -100,26 +100,29 @@ class Dbase(object):
 
     def disconnect_dmain(self):
         """Drop connection to main database at configured path."""
-        try:
-            self.dmain_conn.close()
-        except:
-            pass
+        if hasattr(self, "dmain_conn") and self.dmain_conn is not None:
+            try:
+                self.dmain_conn.close()
+            except RuntimeWarning:
+                pass
         self.dmain_conn = None
 
     def disconnect_dbkup(self):
         """Drop connection to backup database at configured path."""
-        try:
-            self.dbkup_conn.close()
-        except:
-            pass
+        if hasattr(self, "dbkup_conn") and self.dbkup_conn is not None:
+            try:
+                self.dbkup_conn.close()
+            except RuntimeWarning:
+                pass
         self.dbkup_conn = None
 
     def disconnect_darcv(self):
         """Drop connection to archive database at configured path."""
-        try:
-            self.darcv_conn.close()
-        except:
-            pass
+        if hasattr(self, "darcv_conn") and self.darcv_conn is not None:
+            try:
+                self.darcv_conn.close()
+            except RuntimeWarning:
+                pass
         self.darcv_conn = None
 
     def connect_dmain(self):
@@ -146,10 +149,6 @@ class Dbase(object):
         Args:
             cur (object): cursor attached to a sqlite3 db connection
         """
-        print("Creating tables...")
-
-        pp(ST.DBSCHEMA.keys())
-
         for tbl_nm in list(ST.DBSCHEMA.keys()):
             sql = "SELECT name FROM sqlite_master " +\
                 "WHERE type='table' AND name='{}';".format(tbl_nm)
@@ -168,9 +167,6 @@ class Dbase(object):
                     if col == "uid":
                         col_nms[ix] += " PRIMARY KEY"
                 sql = "CREATE TABLE {}({});".format(tbl_nm, ", ".join(col_nms))
-
-                pp(sql)
-
                 cur.execute(sql)
         cur.close()
 
@@ -256,9 +252,6 @@ class Dbase(object):
             d_delete_ts = row[1]
             sql = "DELETE friends WHERE uid = '{}' ".format(d_uid)
             sql += "AND delete_ts = '{}';".format(d_delete_ts)
-
-            pp(sql)
-
             cur.execute(sql)
 
     def purge_db(self):
@@ -279,21 +272,108 @@ class Dbase(object):
         self.dmain_conn.commit()
         self.disconnect_dmain()
 
+    def get_schema(self, p_tbl_nm) -> tuple:
+        """Pull column names and dataclass for audit and data.
+
+        Returns:
+            tuple (audit colnms, audit dataclass,
+                   table data colnms, data dataclass)
+        """
+        a_fields = ST.FIELDS["audit"]
+        aud_cols = ST.DBSCHEMA[p_tbl_nm]["audit"]
+        d_fields = ST.FIELDS[p_tbl_nm]
+        data_cols = ST.DBSCHEMA[p_tbl_nm]["data"]
+        return(a_fields, aud_cols, d_fields, data_cols)
+
+    def set_data_cols(self, d_fields, data_cols,
+                      aud_cols, p_data) -> tuple:
+        """Set "data" values and hash_id. Encrypt if needed.
+
+        Returns:
+            tuple (updated audit dataclass,
+                   updated data dataclass)
+        """
+        hash_str = ""
+        hash_flds = (cnm for cnm in d_fields if cnm != "encrypt_key")
+        for cnm in hash_flds:
+            # set local data class to values passed in as param
+            setattr(data_cols, cnm, getattr(p_data, cnm))
+            val = getattr(data_cols, cnm)
+            if val is not None:     # then add to hash and encrypt
+                hash_str += val
+                if aud_cols.is_encrypted == "True":
+                    encrypt_val = CI.encrypt(val, data_cols.encrypt_key)
+                    setattr(data_cols, cnm, encrypt_val)
+        aud_cols.hash_id = UT.get_hash(hash_str)
+        return(data_cols, aud_cols)
+
+    def set_insert_sql(self, p_tbl_nm, d_fields, a_fields,
+                       data_cols, aud_cols) -> str:
+        """Format SQL for an INSERT.
+
+        Returns:
+            str: the formatted SQL to execute
+        """
+        sql_cols = ", ".join([*d_fields, *a_fields])
+        sql_vals = ""
+        for cnm in d_fields:
+            val = getattr(data_cols, cnm)
+            if cnm == "encrypt_key":
+                sql_vals += "?, "
+            elif val is None:
+                sql_vals += "NULL, "
+            else:
+                sql_vals += "'{}', ".format(val)
+        for cnm in a_fields:
+            val = getattr(aud_cols, cnm)
+            if val is None:
+                sql_vals += "NULL, "
+            else:
+                sql_vals += "'{}', ".format(val)
+        sql = "INSERT INTO {} ({}) VALUES ({});".format(p_tbl_nm,
+                                                        sql_cols,
+                                                        sql_vals[:-2])
+        return(sql)
+
+    def insert_db(self, p_db_action, p_tbl_nm, p_data,
+                  p_uid, p_encrypt) -> tuple:
+        """Insert one row to main database.
+
+        add logic
+        - Compute UID and hash.
+        - Encrypt "data" values if requested.
+        - Set create_ts and update_ts to timestamp.
+        - Set delete_ts to NULL.
+        - Write new row.
+
+        Returns:
+            tuple: (data field names list, "data" dataclass, sql to execute)
+        """
+        a_fields, aud_cols, d_fields, data_cols = self.get_schema(p_tbl_nm)
+        aud_cols.uid = UT.get_uid()
+        dttm = UT.get_dttm()
+        aud_cols.create_ts = dttm.curr_utc
+        aud_cols.update_ts = dttm.curr_utc
+        aud_cols.delete_ts = None
+        if p_tbl_nm == "user":
+            aud_cols.is_encrypted = "True"
+            data_cols.encrypt_key = CI.set_key()
+        data_cols, aud_cols = self.set_data_cols(d_fields, data_cols,
+                                                 aud_cols, p_data)
+        sql = self.set_insert_sql(p_tbl_nm, d_fields, a_fields,
+                                  data_cols, aud_cols)
+        return(d_fields, data_cols, sql)
+
     def write_db(self,
                  p_db_action: ST.Types.t_dbaction,
                  p_tbl_nm: ST.Types.t_tblnames,
                  p_data: object,
                  p_uid: str = None,
-                 p_encrypt: bool = False) -> bool:
+                 p_encrypt: bool = False):
         """Write a record to the DB.
 
         It is a write-only system. No physical updates or deletes
          except on purge. Update, Delete must have a UID.
-        - "add"
-            - Compute UID and hash.
-            - Set create_ts and update_ts to timestamp
-            - Set delete_ts to NULL
-            - Write new row
         - "upd":
             - Read/get record = UID where update_ts is MAX
             - If delete_ts is not NULL, return failure
@@ -308,91 +388,106 @@ class Dbase(object):
             - Else:
                 - Set delete_ts to timestamp
         Args:
-            p_db_action (string -> ST.Types.t_dbaction): add, upd, del
-            p_tbl_nm (string -> ST.Types.t_tblnames): user, friends
-            p_data (object): "data" (not "audit") side of a dataclass
-              for the table.
+            p_db_action (ST.Types.t_dbaction -> str): add, upd, del
+            p_tbl_nm (ST.Types.t_tblnames -> str): user, friends
+            p_data (object): "data" dataclass
             p_uid (string, optional): Required for upd, del. Default is None.
-            p_encrypt (bool, optional): For friends table only. If True,
-              then encrypt data fields. user table data is alwasy encrypted.
-              Default is False.
-
-        Raises:
-            IOError if operation fails
-
-        @DEV
-            Clean this up.
-            Add update and delete logic.
-            Handle a friends record
+            p_encrypt (bool, optional): For friends only. If True, encrypt
+              "data" fields. user "data" always encrypted. Default is False.
         """
         if p_db_action == "add":
-            # Audit columns
-            a_fields = ST.FIELDS["audit"]
-            aud_cols = ST.DBSCHEMA[p_tbl_nm]["audit"]
-            aud_cols.uid = UT.get_uid()
-            dttm = UT.get_dttm()
-            aud_cols.update_ts = dttm.curr_utc
-            aud_cols.delete_ts = None
-            aud_cols.create_ts = dttm.curr_utc
-            # Data columns, hash, encrypt
-            d_fields = ST.FIELDS[p_tbl_nm]
-            data_cols = ST.DBSCHEMA[p_tbl_nm]["data"]
-            if p_tbl_nm == "user":
-                aud_cols.is_encrypted = "True"
-                data_cols.encrypt_key = CI.set_key()
-            hash_str = ""
-            for cnm in d_fields:
-                # set local data class to values passed in as param
-                setattr(data_cols, cnm, getattr(p_data, cnm))
-                val = getattr(data_cols, cnm)
-                # add non-null values to hash string
-                if val is not None:
-                    hash_str += val
-                    # encrypt values
-                    if aud_cols.is_encrypted == "True":
-                        setattr(data_cols, cnm,
-                                CI.encrypt(val, data_cols.encrypt_key))
-            aud_cols.hash_id = UT.get_hash(hash_str)
-            sql_cols = ", ".join([*d_fields, *a_fields])
-            sql_vals = ""
-            for cnm in d_fields:
-                val = getattr(data_cols, cnm)
-                if cnm == "encrypt_key":
-                    sql_vals += "?, "
-                elif val is None:
-                    sql_vals += "NULL, "
+            d_fields, data_cols, sql =\
+                self.insert_db(p_db_action, p_tbl_nm, p_data, p_uid, p_encrypt)
+
+        self.connect_dmain()
+        cur = self.dmain_conn.cursor()
+        if "encrypt_key" in d_fields:
+            try:
+                cur.execute(sql, [data_cols.encrypt_key])
+                self.dmain_conn.commit()
+            except IOError:
+                print("SQL execution failed")
+        else:
+            try:
+                cur.execute(sql)
+                self.dmain_conn.commit()
+            except IOError:
+                print("SQL execution failed")
+        self.dmain_conn.close()
+
+    def decrypt_query_result(self, p_tbl_nm: str,
+                             p_out_list: list) -> list:
+        """If data is encrypted, unencrypt it.
+
+        Args:
+            p_tbl_nm (str): user or friends
+            p_out_list (list): unencrypted list of dataclass results
+
+        Returns:
+            list: encrypted list of dataclass-formatted results
+        """
+        o_list = p_out_list
+        if p_tbl_nm == "friends":
+            u_list = self.query_user()
+            encrypt_key = u_list[0]["data"].encrypt_key
+        else:
+            encrypt_key = o_list[0]["data"].encrypt_key
+        col_nms = (cnm for cnm in ST.FIELDS[p_tbl_nm] if cnm != "encrypt_key")
+        ix = 0
+        for row in o_list:
+            e_row = row
+            for cnm in col_nms:
+                encrypted_val = getattr(e_row["data"], cnm)
+                decrypt_val = CI.decrypt(encrypted_val, encrypt_key)
+                setattr(e_row["data"], cnm, decrypt_val)
+                o_list[ix] = e_row
+            ix += 1
+        return(o_list)
+
+    def format_query_result(self, p_tbl_nm: str,
+                            p_decrypt: bool,
+                            p_col_nms: list,
+                            p_result: list) -> list:
+        """Convert sqlite3 results into local format.
+
+        Sqlite returns each row as a tuple in a list.
+        When no rows are found, sqlite return a tuple with
+          all values set to None, which is a bit odd since then
+          you get a rowcount > 0.
+        It does not return a named tuple or dict.
+        To facilitate data management on the return side,
+          cast each row into a dataclass and put those in list,
+          ignoring the row if it is all None values.
+
+        Args:
+            p_tbl_nm (str): user or friends
+            p_decrypt (bool): True if results should be decrypted
+            p_col_nms (list): list of all col names on the row
+            p_result (sqlite result set -> list): list of tuple
+
+        Returns:
+            list: each row is formatted like ST.DBSCHEMA
+        """
+        o_list = list()
+        for row in p_result:
+            o_row = ST.DBSCHEMA[p_tbl_nm]
+            all_none = True
+            for val in row:
+                all_none = False if val is not None else all_none
+                col_ix = row.index(val)
+                col_nm = p_col_nms[col_ix]
+                if col_nm in ST.FIELDS[p_tbl_nm]:
+                    setattr(o_row["data"], col_nm, val)
                 else:
-                    sql_vals += "'{}', ".format(val)
-            for cnm in a_fields:
-                val = getattr(aud_cols, cnm)
-                if val is None:
-                    sql_vals += "NULL, "
-                else:
-                    sql_vals += "'{}', ".format(val)
-            sql = "INSERT INTO {} ({}) VALUES ({});".format(p_tbl_nm,
-                                                            sql_cols,
-                                                            sql_vals[:-2])
+                    setattr(o_row["audit"], col_nm, val)
+            if not all_none:
+                o_list.append(o_row)
+        if p_decrypt and o_row["audit"].is_encrypted == 'True':
+            o_list = self.decrypt_query_result(p_tbl_nm, o_list)
+        return o_list
 
-            pp(sql)
-
-            self.connect_dmain()
-            cur = self.dmain_conn.cursor()
-            if "encrypt_key" in d_fields:
-
-                pp(("data_cols.encrypt_key", data_cols.encrypt_key))
-
-                result = cur.execute(sql, [data_cols.encrypt_key])
-            else:
-                result = cur.execute(sql)
-            self.dmain_conn.commit()
-            self.dmain_conn.close()
-
-            # Parse the result. Raise an exception on failures
-            pp(result)
-
-    def query_friends(self,
-                      p_sql: str,
-                      p_filter: dict) -> str:
+    def query_friends_more(self, p_sql: str,
+                           p_filter: dict) -> str:
         """Build SQL to do read query on the friends table.
 
         - Read friends table by:
@@ -438,62 +533,52 @@ class Dbase(object):
             sql += " GROUP BY {};".format(col_nm)
         return sql
 
-    def query_db(self,
-                 p_tbl_nm: ST.Types.t_tblnames,
-                 p_filter: dict = None,
-                 p_decrypt: bool = True) -> tuple:
-        """Run read-only queries against the main database.
+    def query_friends(self, p_decrypt: bool = True,
+                      p_filter: dict = None) -> list:
+        """Run read-only queries against the friends table.
 
-        AND logic is is used when multiple colums are queried.
-        No JOIN or OR logic supported.
-        GROUP BY is triggered by a search value of 'LIST'.
-        Assemble and run the SQL.
+        - AND logic is is used when multiple colums are queried.
+        - No JOIN or OR logic supported.
+        - GROUP BY is triggered by a search value of 'LIST'.
 
         Args:
-            p_tbl_nm (str -> ST.Types.t_tblnames): A valid table name.
-            p_filter (dict, optional): Required for friends. For friends:
-                Using col-names from ST.DBSCHEMA specify 1..n columns,
-                value pairs to list. Or, single col-nm with value = "LIST".
+            p_decrypt (bool, optional): If True, return decrypted data,
+                else return data as-is on the database.
+            p_filter (dict, optional): Required for friends, only for friends.
+                Using col-names from ST.DBSCHEMA, specify 1..n columns and
+                paired values. Or, single col-nm with value = "LIST".
+
+        Returns:
+            list: of dataclass objects containing query results  or  empty
+        """
+        col_nms = [*ST.FIELDS["friends"], *ST.FIELDS["audit"]]
+        sql = "SELECT {}, MAX(update_ts) FROM {} ".format(", ".join(col_nms),
+                                                          "friends")
+        sql = self.query_friends_more(sql)
+        self.connect_dmain()
+        cur = self.dmain_conn.cursor()
+        cur_result = cur.execute(sql).fetchall()
+        o_list = self.format_query_result("friends", p_decrypt,
+                                          col_nms, cur_result)
+        return o_list
+
+    def query_user(self, p_decrypt: bool = True) -> list:
+        """Run read-only queries against the user table.
+
+        Args:
             p_decrypt (bool, optional): If True, return decrypted data,
                 else return data as-is on the database.
 
         Returns:
-            namedtuple: either ST.user_rec or ST.friends_rec
+            list: of dataclass objects containing query results  or  empty
         """
-        col_nms = [*ST.FIELDS[p_tbl_nm], *ST.FIELDS["audit"]]
+        col_nms = [*ST.FIELDS["user"], *ST.FIELDS["audit"]]
         sql = "SELECT {}, MAX(update_ts) FROM {} ".format(", ".join(col_nms),
-                                                          p_tbl_nm)
-        if p_tbl_nm == "friends":
-            sql = self.query_friends(sql)
-        elif p_tbl_nm == "user":
-            sql += "WHERE delete_ts IS NULL;"
+                                                          "user")
+        sql += "WHERE delete_ts IS NULL;"
         self.connect_dmain()
         cur = self.dmain_conn.cursor()
-
-        pp(("query sql", sql))
-
         cur_result = cur.execute(sql).fetchall()
-        # Sqlite returns each row as a tuple in a list
-        # It does not return a named tuple or similar structure
-        # To facilitate data management on the return side,
-        # I cast each row into a dataclass.
-        # When no rows are found, sqlite return a tuple with
-        #  all values set to None, which is a bit annoying
-        o_list = list()
-        for row in cur_result:
-            # examine the tuple
-            o_row = ST.DBSCHEMA[p_tbl_nm]
-            all_none = True
-            for val in row:
-                all_none = False if val is not None else all_none
-                # get column index
-                col_ix = row.index(val)
-                # get column name
-                col_nm = col_nms[col_ix]
-                if col_nm in ST.FIELDS[p_tbl_nm]:
-                    setattr(o_row["data"], col_nm, val)
-                else:
-                    setattr(o_row["audit"], col_nm, val)
-            if not all_none:
-                o_list.append(o_row)
+        o_list = self.format_query_result("user", p_decrypt,
+                                          col_nms, cur_result)
         return o_list

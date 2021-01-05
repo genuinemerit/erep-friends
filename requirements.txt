@@ -1,13 +1,11 @@
-bs4
 cryptography
-erepublik
 pathlib
 pillow
 prettyprint
 pytz
-PySocks
 requests
 secrets
 tk
 tornado
 typing
+tzlocal

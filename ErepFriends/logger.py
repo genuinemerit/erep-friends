@@ -10,7 +10,9 @@ Author:    PQ <pq_rfw @ pm.me>
 """
 import logging
 import traceback
+from copy import copy
 from pprint import pprint as pp  # noqa: F401
+from tzlocal import get_localzone
 
 from structs import Structs
 from utils import Utils
@@ -24,30 +26,43 @@ class Logger(object):
 
     def __init__(self,
                  p_log_file: str,
-                 p_log_level: ST.LogLevel = ST.LogLevel.NOTSET,
-                 p_local_tz: str = None):
+                 p_log_level: ST.LogLevel = ST.LogLevel.NOTSET):
         """Initialize the Logger class.
 
         Create a new log file if one does not already exist.
+
+        @DEV - seem to have a problem where the dataclass
+            storage keeps getting re-used even if I copy it.
+            Guess I need to go back to using namedtuple for
+            this use case.
 
         Args:
             p_log_file (path): full path to log file location
             p_log_level (ST.LogLevel -> int, optional):
                 A valid log level value. Defaults to NOTSET (= 0).
-            p_local_tz (string, optional): A valid Olson tz name value.
-                                           Defaults to None.
         """
         self.LOGLEVEL = p_log_level
         self.LOGFILE = p_log_file
-        erep_dttm = UT.get_dttm(ST.TimeZone.EREP)
-        local_dttm = None
-        local_dttm = UT.get_dttm(p_local_tz)\
-            if p_local_tz not in (None, "None", "")\
-            else UT.get_dttm(p_local_tz)
+        erep_dttm = copy(UT.get_dttm(ST.TimeZone.EREP))
+        pp(("erep_dttm", erep_dttm))
+        pp(("erep_dttm.curr_lcl", erep_dttm.curr_lcl))
+
+        localhost_tz = get_localzone()
+        localhost_dttm = copy(UT.get_dttm(localhost_tz.zone))
+        pp(("localhost_dttm", localhost_dttm))
+        pp(("localhost_dttm.curr_lcl", localhost_dttm.curr_lcl))
+
+        pp(("erep_dttm.curr_lcl", erep_dttm.curr_lcl))
+
+        if erep_dttm == localhost_dttm:
+            print("Rats. They are equal. WWWHHHYYYY????")
+        else:
+            print("Good. They are not equal.")
+
         f = open(self.LOGFILE, 'a+')
         f.write("\n== Log Session started")
-        f.write("\n==     Local Time: {} ({})".format(
-                local_dttm.curr_lcl, p_local_tz))
+        f.write("\n== Localhost Time: {} ({})".format(
+                localhost_dttm.curr_lcl, localhost_tz))
         f.write("\n== eRepublik Time: {} ({})".format(
                 erep_dttm.curr_lcl, ST.TimeZone.EREP))
         f.write("\n== Universal Time: {} ({})\n\n".format(

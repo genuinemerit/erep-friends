@@ -55,10 +55,7 @@ class Structs(object):
                          and col_nm[:2] != "__"],
             'hashlevel': [col_nm for col_nm in self.HashLevel.__dict__
                           if not callable(getattr(self.HashLevel, col_nm))
-                          and col_nm[:2] != "__"],
-            'dttm': [col_nm for col_nm in self.DateTime.__dict__
-                     if not callable(getattr(self.DateTime, col_nm))
-                     and col_nm[:2] != "__"]
+                          and col_nm[:2] != "__"]
         }
 
     class Types(object):
@@ -111,18 +108,6 @@ class Structs(object):
         SHA1: int = 40
 
     @dataclass
-    class DateTime:
-        """Define date-time fields supported by the system."""
-
-        tz: str = None
-        curr_lcl: str = None
-        curr_lcl_short: str = None
-        next_lcl: str = None
-        curr_utc: str = None
-        next_utc: str = None
-        curr_ts: str = None
-
-    @dataclass
     class ConfigFields:
         """Define values used in configuration file."""
 
@@ -134,7 +119,6 @@ class Structs(object):
         log_path: str = None
         log_level: str = 'INFO'
         log_name: str = 'efriends.log'
-        local_tz: str = None
         erep_url: str = 'https://www.erepublik.com/en'
         w_txt_title: str = "eRepublik Friends Analysis"
         w_txt_greet: str = "Welcome, [user]!"

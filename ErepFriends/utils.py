@@ -11,6 +11,8 @@ Author:    PQ <pq_rfw @ pm.me>
 import hashlib
 import secrets
 import subprocess as shl
+from collections import namedtuple
+from copy import copy
 from pprint import pprint as pp  # noqa: F401
 
 import arrow
@@ -25,16 +27,16 @@ class Utils(object):
     """Generic functions for common tasks."""
 
     @classmethod
-    def get_dttm(cls, p_tzone: str = None) -> ST.DateTime:
+    def get_dttm(cls, p_tzone: str) -> ST.Types.t_namedtuple:
         """Get date and time values.
 
         Args:
-            p_tzone (string, optional):
-                Valid Unix-style time zone. Defaults to ST.TIMEZONE.EREP_TZ.
+            p_tzone (string):
+                Valid Unix-style time zone.
                 Examples:  America/New_York  Asia/Shanghai UTC
 
         Returns:
-            object: ST.DateTime
+            namedtuple
             - .tz {string} Default timezone name
             - .curr_lcl {string} Default tz date time w/seconds and zone
             - .curr_lcl_short {string} Default date time w/o secs and zone
@@ -45,23 +47,27 @@ class Utils(object):
         """
         long_format = 'YYYY-MM-DD HH:mm:ss.SSSSS ZZ'
         short_format = 'YYYY-MM-DD HH:mm:ss'
-        ST.DateTime.tzone = ST.TimeZone.EREP\
-            if (p_tzone not in all_timezones or p_tzone is None)\
-            else p_tzone
-        lcl_dttm = arrow.now(ST.DateTime.tzone)
-        ST.DateTime.curr_lcl = str(lcl_dttm.format(long_format))
-        ST.DateTime.curr_lcl_short = str(lcl_dttm.format(short_format))
-        ST.DateTime.next_lcl =\
-            str(lcl_dttm.shift(days=+1).format(long_format))
+        fields = ['tz', 'curr_lcl', 'curr_lcl_short', 'next_lcl',
+                  'curr_utc', 'next_utc', 'curr_ts']
+        dttm = namedtuple("dttm", " ".join(fields))
+
+        pp(("p_tzone", p_tzone))
+
+        lcl_dttm = arrow.now(p_tzone)
+        dttm.curr_lcl = str(lcl_dttm.format(long_format))
+        dttm.curr_lcl_short = str(lcl_dttm.format(short_format))
+        dttm.next_lcl = str(lcl_dttm.shift(days=+1).format(long_format))
+
+        pp(("dttm.curr_lcl", dttm.curr_lcl))
+
         utc_dttm = arrow.utcnow()
-        ST.DateTime.curr_utc = str(utc_dttm.format(long_format))
-        ST.DateTime.next_utc =\
-            str(utc_dttm.shift(days=+1).format(long_format))
-        ST.DateTime.curr_ts = ST.DateTime.curr_utc.strip()
+        dttm.curr_utc = str(utc_dttm.format(long_format))
+        dttm.next_utc = str(utc_dttm.shift(days=+1).format(long_format))
+        dttm.curr_ts = dttm.curr_utc.strip()
         for rm in [' ', ':', '+', '.', '-']:
-            ST.DateTime.curr_ts = ST.DateTime.curr_ts.replace(rm, '')
-        ST.DateTime.curr_ts = ST.DateTime.curr_ts[0:-4]
-        return ST.DateTime
+            dttm.curr_ts = dttm.curr_ts.replace(rm, '')
+        dttm.curr_ts = dttm.curr_ts[0:-4]
+        return dttm
 
     @classmethod
     def get_hash(cls,
