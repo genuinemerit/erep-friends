@@ -72,7 +72,7 @@ class Friends(object):
                            p_bkup_db_path: str,
                            p_arcv_db_path: str,
                            p_local_tz: str,
-                           p_log_path: str,):
+                           parse_text_path: str,):
         """Define and create config file.
 
         Args:
@@ -81,16 +81,16 @@ class Friends(object):
             p_bkup_db_path (string): parent path to backup DB
             p_arcv_db_path (string): parent path to archive DB
             p_local_tz (string): localhost time zone
-            p_log_path (string): parent path to log file
+            parse_text_path (string): parent path to log file
         """
         cfg_txt = ""
-        for cfg_nm in ST.ConfigFields.fields:
+        for cfg_nm in ST.FIELDS["config"]:
             cfg_val = getattr(ST.ConfigFields, cfg_nm)
             cfg_val = p_data_path if cfg_nm == 'data_path' else cfg_val
             cfg_val = p_bkup_db_path if cfg_nm == 'bkup_db_path' else cfg_val
             cfg_val = p_arcv_db_path if cfg_nm == 'arcv_db_path' else cfg_val
             cfg_val = p_local_tz if cfg_nm == 'local_tz' else cfg_val
-            cfg_val = p_log_path if cfg_nm == 'log_path' else cfg_val
+            cfg_val = parse_text_path if cfg_nm == 'log_path' else cfg_val
             cfg_txt += "{} = '{}'\n".format(cfg_nm, cfg_val)
         with open(p_cfg_file_path, 'w') as cfgf:
             cfgf.write(cfg_txt)
@@ -103,7 +103,7 @@ class Friends(object):
             p_cfg_file_path (string): full path to config file
         """
         self.opt = None
-        for opt_nm in ST.ConfigFields.fields:
+        for opt_nm in ST.FIELDS["config"]:
             define(opt_nm)
         options.parse_config_file(p_cfg_file_path)
         self.opt = options
@@ -122,7 +122,7 @@ class Friends(object):
         """Assign log file location. Instantiate Logger object."""
         self.logme = False
         if self.opt.log_path not in (None, "None", ""):
-            self.logme = False if self.opt.log_level == ST.LOGLEVEL.NOTSET\
+            self.logme = False if self.opt.log_level == ST.LogLevel.NOTSET\
                                else True
             log_file =\
                 path.join(self.opt.log_path, self.opt.log_name)
@@ -130,9 +130,9 @@ class Friends(object):
             self.LOG.set_log()
             if self.logme:
                 msg = "Log file location: {}".format(log_file)
-                self.LOG.write_log(ST.LOGLEVEL.INFO, msg)
+                self.LOG.write_log(ST.LogLevel.INFO, msg)
                 msg = "Log level: {}".format(self.opt.log_level)
-                self.LOG.write_log(ST.LOGLEVEL.INFO, msg)
+                self.LOG.write_log(ST.LogLevel.INFO, msg)
 
     def set_backup_db_path(self) -> str:
         """Set path to backup database.
@@ -192,16 +192,19 @@ class Friends(object):
         Returns:
             string: POSIX/Olson time zone name or 'None'
         """
-        local_tz = ST.configs["local_tz"]
-        while local_tz in (None, "None", ""):
+        local_tz = None
+        while local_tz is None:
             print("\nEnter localhost Time Zone or 'n':")
             local_tz = input()
+            if local_tz[:1].lower() == 'n':
+                local_tz = None
+                break
             if local_tz not in all_timezones:
                 print("\n{} is not a valid Time Zone name.".format(local_tz))
                 print("  Try again.")
-                local_tz = ""
-        if local_tz not in all_timezones:
-            local_tz = ST.ConfigFields.local_tz
+                local_tz = None
+        if local_tz is None or local_tz not in all_timezones:
+            local_tz = ST.TimeZone.EREP
         return local_tz
 
     def set_log_file_path(self) -> str:
@@ -265,12 +268,12 @@ class Friends(object):
         formdata = {'_token': self.erep_csrf_token,
                     "remember": '1',
                     'commit': 'Logout'}
-        erep_logout = self.erep_rqst.post(self.opt.erep_url + "/logout",
+        ereparse_textout = self.erep_rqst.post(self.opt.erep_url + "/logout",
                                           data=formdata, allow_redirects=True)
         if self.logme:
-            msg = "logout status code: {}".format(erep_logout.status_code)
-            self.LOG.write_log(ST.LOGLEVEL.INFO, msg)
-        if erep_logout.status_code == 302:
+            msg = "logout status code: {}".format(ereparse_textout.status_code)
+            self.LOG.write_log(ST.LogLevel.INFO, msg)
+        if ereparse_textout.status_code == 302:
             self.erep_csrf_token = None
             self.erep_rqst.get(self.opt.erep_url)
             # > GUI stuff:
@@ -288,13 +291,13 @@ class Friends(object):
         formdata = {'citizen_email': p_email,
                     'citizen_password': p_password,
                     "remember": '1', 'commit': 'Login'}
-        erep_login = self.erep_rqst.post(self.opt.erep_url + "/login",
+        ereparse_textin = self.erep_rqst.post(self.opt.erep_url + "/login",
                                          data=formdata,
                                          allow_redirects=False)
         if self.logme:
-            msg = "login status code: {}".format(erep_login.status_code)
-            self.LOG.write_log(ST.LOGLEVEL.INFO, msg)
-        if erep_login.status_code == 302:
+            msg = "login status code: {}".format(ereparse_textin.status_code)
+            self.LOG.write_log(ST.LogLevel.INFO, msg)
+        if ereparse_textin.status_code == 302:
             erep_response = self.erep_rqst.get(self.opt.erep_url)
             response_text = erep_response.text
             with open(path.abspath(path.join(self.opt.log_path,
@@ -311,32 +314,43 @@ class Friends(object):
 
         Returns:
             namedtuple: id_info.. profile_id, user_name
-            @DEV change to a dataclass
         """
-        # Maybe replace this with a dataclass?
         id_info = namedtuple("id_info", "profile_id user_name")
-        erep_soup = bs(response_text, features="html.parser")
-        soup_scripts = erep_soup.find_all("script")
-        soup_script = '\n'.join(map(str, soup_scripts))
+
+        # not really necessary to break it out with bs and join the scripts
+        # erep_soup = bs(response_text, features="html.parser")
+        # soup_scripts = erep_soup.find_all("script")
+        # soup_script = '\n'.join(map(str, soup_scripts))
         # get CSRF token
         # \s is an invalid escape sequence
         # Can probably do this just as easily with a split
         # I don't think beautifulsoup is really needed at all
-        regex = re.compile("csrfToken\s*:\s*\'([a-z0-9]+)\'")  # noqa: W605
-        self.erep_csrf_token = regex.findall(soup_script)[0]
+        # Examine the file next time and find the terminating delimiter for csrfToken
+        # var csrfToken = '93e492a2055065c15fe6b551c2d1f88a';
+        # regex = re.compile("csrfToken\s*:\s*\'([a-z0-9]+)\'")  # noqa: W605
+        # self.erep_csrf_token = regex.findall(soup_script)[0]
+
+        # get CSRF token
+        parse_text = response_text.split("var csrfToken = '")
+        parse_text = parse_text[1].split("';")
+        self.erep_csrf_token = parse_text[0]
         # Get user profile ID
-        p_log = soup_script.split('"citizen":{"citizenId":')
-        p_log = p_log[1].split(",")
-        id_info.profile_id = p_log[0]
+        # parse_text = soup_script.split('"citizen":{"citizenId":')
+        parse_text = response_text.split('"citizen":{"citizenId":')
+        parse_text = parse_text[1].split(",")
+        id_info.profile_id = parse_text[0]
         # Get user name
-        p_log = soup_script.split('"name":')
-        p_log = p_log[1].split(",")
-        id_info.user_name = p_log[0].replace('"', '')
+        # parse_text = soup_script.split('"name":')
+        parse_text = response_text.split('"name":')
+        parse_text = parse_text[1].split(",")
+        id_info.user_name = parse_text[0].replace('"', '')
+
         if self.logme and self.opt.log_level == 'DEBUG':
             msg = "CSRF Token:\t{}".format(self.erep_csrf_token)
-            self.LOG.write_log(ST.LOGLEVEL.INFO, msg)
-            msg = "Login response:\n{}".format(soup_script)
-            self.LOG.write_log(ST.LOGLEVEL.INFO, msg)
+            self.LOG.write_log(ST.LogLevel.INFO, msg)
+            # msg = "Login response:\n{}".format(soup_script)
+            msg = "Login response:\n{}".format(response_text)
+            self.LOG.write_log(ST.LogLevel.INFO, msg)
         return id_info
 
     def login_erep(self) -> tuple:
@@ -368,56 +382,6 @@ class Friends(object):
             id_info = self.get_user_and_session_info(response_text)
             return (id_info, erep_email_id, erep_pass)
 
-    def set_environment(self):
-        """Handle basic set-up as needed.
-
-        Complete necessary set-up steps before proceeding
-        @DEV
-            Provide explain/help  of what goes on here.
-            Optional files can also be set up later if desired.
-            Replace console inputs with GUI.
-        """
-        if sys.version_info[:2] < (3, 6):
-            msg = "Python 3 is required.\n"
-            msg += "Your version is v{}.{}.{}".format(*sys.version_info)
-            raise Exception(EnvironmentError, msg)
-
-        data_path = path.abspath(path.realpath(ST.ConfigFields.data_path))
-        if not Path(data_path).exists():
-            mkdir(data_path)
-
-        cfg_file_path = path.join(data_path, ST.ConfigFields.cfg_file_name)
-        if not Path(cfg_file_path).exists():
-            bkup_db_path = self.set_backup_db_path()
-            arcv_db_path = self.set_archive_db_path()
-            local_tz = self.set_local_time_zone()
-            log_path = self.set_log_file_path()
-            self.create_config_file(cfg_file_path, data_path,
-                                    bkup_db_path, arcv_db_path,
-                                    local_tz, log_path)
-        self.set_options(cfg_file_path)
-        self.configure_database()
-        self.enable_logging()
-        self.set_erep_headers()
-
-        # Does a user record already exist?
-        rowcount, data_rows = self.DB.query_db("user")
-        if rowcount < 1:
-            # No, so...
-            # Use a dict instead of a namedtuple when sending data to Dbase()
-            id_info, erep_email_id, erep_pass = self.login_erep()
-            u_row = ST.user_rec
-            u_row.user_erep_profile_id = id_info.profile_id
-            u_row.user_erep_email = erep_email_id
-            u_row.user_erep_password = erep_pass
-            u_row.encrypt_all = 'False'
-            # Write user record
-            self.DB.write_db("add", "user", u_row, None, True)
-            # Get user eRep profile. It will be used to write friends record
-            f_rec = self.get_user_profile(id_info)
-            pp(f_rec)
-            # Next, also write a friends record for the user
-
     def get_user_profile(self,
                          p_id_info: ST.Types.t_namedtuple):
         """Retrieve profile for user from eRepublik.
@@ -436,11 +400,12 @@ class Friends(object):
             @DEV use a dataclass instead
         """
         print('Gathering info about {}...'.format(p_id_info.user_name))
+
         file_nm = "profile_response_{}".format(p_id_info.profile_id)
         profile_file = path.abspath(path.join(self.opt.log_path, file_nm))
         if Path(profile_file).exists():
             with open(profile_file) as pf:
-                profile_data = json.loads(pf.read())   # convert to dict
+                profile_data = json.loads(pf.read())        # convert to dict
         else:
             profile_url = self.opt.erep_url +\
                 "/main/citizen-profile-json/" + p_id_info.profile_id
@@ -452,7 +417,7 @@ class Friends(object):
             with open(profile_file, "w") as f:
                 f.write(str(erep_response.text))            # save a copy
 
-        f_rec = ST.friends_rec
+        f_rec = ST.FriendsFields
         f_rec.profile_id = p_id_info.profile_id
         f_rec.name = profile_data["citizen"]["name"]
         f_rec.is_alive = profile_data["citizen"]["is_alive"]
@@ -509,10 +474,71 @@ class Friends(object):
             profile_data['newspaper']["stripped_title"] + "-" +\
             str(profile_data['newspaper']["id"]) + "/1"
 
-        if self.logme and self.opt.log_level == ST.LOGLEVEL.DEBUG:
+        if self.logme and self.opt.log_level == ST.LogLevel.DEBUG:
             msg = "user_profile: {}".format(profile_data)
-            self.LOG.write_log(ST.LOGLEVEL.DEBUG, msg)
+            self.LOG.write_log(ST.LogLevel.DEBUG, msg)
         return f_rec
+
+    def set_environment(self):
+        """Handle basic set-up as needed.
+
+        Complete necessary set-up steps before proceeding
+        @DEV
+            Provide explain/help  of what goes on here.
+            Optional files can also be set up later if desired.
+            Replace console inputs with GUI.
+        """
+        if sys.version_info[:2] < (3, 6):
+            msg = "Python 3 is required.\n"
+            msg += "Your version is v{}.{}.{}".format(*sys.version_info)
+            raise Exception(EnvironmentError, msg)
+
+        data_path = path.abspath(path.realpath(ST.ConfigFields.data_path))
+        if not Path(data_path).exists():
+            mkdir(data_path)
+
+        cfg_file_path = path.join(data_path, ST.ConfigFields.cfg_file_name)
+        if not Path(cfg_file_path).exists():
+            bkup_db_path = self.set_backup_db_path()
+            arcv_db_path = self.set_archive_db_path()
+            local_tz = self.set_local_time_zone()
+            log_path = self.set_log_file_path()
+            self.create_config_file(cfg_file_path, data_path,
+                                    bkup_db_path, arcv_db_path,
+                                    local_tz, log_path)
+        self.set_options(cfg_file_path)
+        self.configure_database()
+        self.enable_logging()
+        self.set_erep_headers()
+
+        # Does a user record already exist?
+        data_rows = self.DB.query_db("user")
+
+        pp(("len(data_rows)", len(data_rows)))
+        pp(("data_rows", data_rows))
+
+        if len(data_rows) < 1:
+            # No, so...
+            # Use a dict instead of a namedtuple when sending data to Dbase()
+            id_info, erep_email_id, erep_pass = self.login_erep()
+            # Do I need parens to instantiate a dataclass?
+            u_row = ST.UserFields
+
+            pp(("u_row", u_row))
+            dir(u_row)
+
+            u_row.user_erep_profile_id = id_info.profile_id
+            u_row.user_erep_email = erep_email_id
+            u_row.user_erep_password = erep_pass
+            u_row.encrypt_all = 'False'
+            # Write user record
+            self.DB.write_db("add", "user", u_row, None, True)
+            # Get user eRep profile. It will be used to write friends record
+            f_rec = self.get_user_profile(id_info)
+
+            pp(("f_rec", f_rec))
+
+            # Next, also write a friends record for the user
 
 
     ## XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
@@ -638,7 +664,7 @@ class Friends(object):
         with open(file_path, "w") as f:
             f.write(self.id_list.get(1.0, tk.END))
         if self.logme:
-            self.LOG.write_log(ST.LOGLEVEL.INFO, "Citizens ID .list saved at: {}".format(file_path))
+            self.LOG.write_log(ST.LogLevel.INFO, "Citizens ID .list saved at: {}".format(file_path))
 
         self.win_save.withdraw()
 

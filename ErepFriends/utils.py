@@ -45,7 +45,7 @@ class Utils(object):
         """
         long_format = 'YYYY-MM-DD HH:mm:ss.SSSSS ZZ'
         short_format = 'YYYY-MM-DD HH:mm:ss'
-        ST.DateTime.tzone = ST.TIMEZONE.EREP\
+        ST.DateTime.tzone = ST.TimeZone.EREP\
             if (p_tzone not in all_timezones or p_tzone is None)\
             else p_tzone
         lcl_dttm = arrow.now(ST.DateTime.tzone)
@@ -66,7 +66,7 @@ class Utils(object):
     @classmethod
     def get_hash(cls,
                  p_data_in: str,
-                 p_len: ST.HASHALGO.t_values = 64) -> str:
+                 p_len: ST.HashLevel = ST.HashLevel.SHA256) -> str:
         """Create hash of input string, returning UTF-8 hex-string.
 
         - 128-byte hash uses SHA512
@@ -76,25 +76,16 @@ class Utils(object):
 
         Args:
             p_data_in (string): data to be hashed
-            p_len (ST.HASHALGO.t_values -> integer, optional):
+            p_len (ST.HashLevel -> int, optional):
                 Length of hash to return. Default is 64.
 
         Returns:
             string: UTF-8-encoded hash of input argument
-
-        if v_len == ST.HASH.SHA512:
-            v_hash = hashlib.sha512()
-        elif v_len == ST.HASH.SHA256:
-            v_hash = hashlib.sha256()
-        elif v_len == ST.HASH.SHA224:
-            v_hash = hashlib.sha224()
-        elif v_len == ST.HASH.SHA1:
-            v_hash = hashlib.sha1()
         """
         v_hash = str()
-        v_hash = hashlib.sha512() if p_len == ST.HASH.SHA512\
-            else hashlib.sha224() if p_len == ST.HASH.SHA224\
-            else hashlib.sha1() if p_len == ST.HASH.SHA1\
+        v_hash = hashlib.sha512() if p_len == ST.HashLevel.SHA512\
+            else hashlib.sha224() if p_len == ST.HashLevel.SHA224\
+            else hashlib.sha1() if p_len == ST.HashLevel.SHA1\
             else hashlib.sha256()
         v_hash.update(p_data_in.encode("utf-8"))
         return v_hash.hexdigest()

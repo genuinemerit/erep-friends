@@ -37,9 +37,59 @@ class Structs(object):
                 {'data': self.UserFields(), 'audit': self.AuditFields()},
             'friends':
                 {'data': self.FriendsFields(), 'audit': self.AuditFields()}}
+        self.FIELDS = {
+            'config': [col_nm for col_nm in self.ConfigFields.__dict__
+                       if not callable(getattr(self.ConfigFields, col_nm))
+                       and col_nm[:2] != "__"],
+            'audit': [col_nm for col_nm in self.AuditFields.__dict__
+                      if not callable(getattr(self.AuditFields, col_nm))
+                      and col_nm[:2] != "__"],
+            'user': [col_nm for col_nm in self.UserFields.__dict__
+                     if not callable(getattr(self.UserFields, col_nm))
+                     and col_nm[:2] != "__"],
+            'friends': [col_nm for col_nm in self.FriendsFields.__dict__
+                        if not callable(getattr(self.FriendsFields, col_nm))
+                        and col_nm[:2] != "__"],
+            'loglevel': [col_nm for col_nm in self.LogLevel.__dict__
+                         if not callable(getattr(self.LogLevel, col_nm))
+                         and col_nm[:2] != "__"],
+            'hashlevel': [col_nm for col_nm in self.HashLevel.__dict__
+                          if not callable(getattr(self.HashLevel, col_nm))
+                          and col_nm[:2] != "__"],
+            'dttm': [col_nm for col_nm in self.DateTime.__dict__
+                     if not callable(getattr(self.DateTime, col_nm))
+                     and col_nm[:2] != "__"]
+        }
+
+    class Types(object):
+        """Define non-standard data types."""
+
+        t_dbaction = Literal['add', 'upd', 'del']
+        t_tblnames = Literal['user', 'friends']
+        t_ffilters = Literal['uid', 'name', 'profile_id', 'party_name',
+                             'militia_name', 'level', 'xp']
+        t_namedtuple = NamedTuple
 
     @dataclass
-    class LOGLEVEL:
+    class TimeZone:
+        """Define commonly-used time zone values."""
+
+        EREP: str = 'America/Los_Angeles'
+        UTC: str = 'UTC'
+
+    @dataclass
+    class TextHelp:
+        """Define some useful constants for displaying text."""
+
+        LF: str = '\n'
+        LF_TAB: str = '\n\t'
+        LF_TABx2: str = '\n\t\t'
+        TAB: str = '\t'
+        TABx2: str = '\t\t'
+        LINE: str = '======================================='
+
+    @dataclass
+    class LogLevel:
         """Define valid logging levels."""
 
         CRITICAL: int = 50
@@ -50,47 +100,15 @@ class Structs(object):
         INFO: int = 20
         DEBUG: int = 10
         NOTSET: int = 0
-        t_values = Literal[0, 10, 20, 30, 40, 50]
-        t_names = Literal['NOTSET', 'DEBUG', 'INFO', 'NOTICE',
-                          'WARNING', 'ERROR', 'FATAL', 'CRITICAL']
 
     @dataclass
-    class HASH:
+    class HashLevel:
         """Define valid hashing levels."""
 
         SHA512: int = 128
         SHA256: int = 64
         SHA224: int = 56
         SHA1: int = 40
-        t_values = Literal[40, 56, 64, 128]
-        t_names = Literal['SHA1', 'SHA224', 'SHA256', 'SHA512']
-
-    @dataclass
-    class TIMEZONE:
-        """Define commonly-used time zone values."""
-
-        EREP: str = 'America/Los_Angeles'
-        UTC: str = 'UTC'
-
-    @dataclass
-    class TXT:
-        """Define some useful constants for displaying text."""
-
-        LF: str = '\n'
-        LF_TAB: str = '\n\t'
-        LF_TABx2: str = '\n\t\t'
-        TAB: str = '\t'
-        TABx2: str = '\t\t'
-        LINE: str = '======================================='
-
-    class Types(object):
-        """Define non-standard data types."""
-
-        t_dbaction = Literal['add', 'upd', 'del']
-        t_tblnames = Literal['user', 'friends']
-        t_ffilters = Literal['uid', 'name', 'profile_id', 'party_name',
-                             'militia_name', 'level', 'xp']
-        t_namedtuple = NamedTuple
 
     @dataclass
     class DateTime:
@@ -124,23 +142,17 @@ class Structs(object):
         w_txt_disconnected: str = "You are now logged out of eRepublik"
         w_txt_login_failed: str =\
             "eRep login failed. Please check credentials"
-        fields = [col_nm for col_nm in self.__dict__
-                    if not callable(getattr(self, col_nm))
-                     and col_nm[:2] != "__"]
 
     @dataclass
     class AuditFields:
         """Define audit columns used on all tables."""
 
         uid: str = None
-        encrypt_all: str = None
         hash_id: str = None
         create_ts: str = None
-        update_tsdelete_ts: str = None
+        update_ts: str = None
+        delete_ts: str = None
         is_encrypted: str = None
-        fields = [col_nm for col_nm in self.__dict__
-                    if not callable(getattr(self, col_nm))
-                     and col_nm[:2] != "__"]
 
     @dataclass
     class UserFields:
@@ -151,9 +163,6 @@ class Structs(object):
         user_erep_password: str = None
         encrypt_all: str = None
         encrypt_key: str = None
-        fields = [col_nm for col_nm in self.__dict__
-                    if not callable(getattr(self, col_nm))
-                     and col_nm[:2] != "__"]
 
     @dataclass
     class FriendsFields:
@@ -193,6 +202,3 @@ class Structs(object):
         newspaper_name: str = None
         newspaper_avatar_link: str = None
         newspaper_url: str = None
-        fields = [col_nm for col_nm in self.__dict__
-                    if not callable(getattr(self, col_nm))
-                     and col_nm[:2] != "__"]

@@ -24,7 +24,7 @@ class Logger(object):
 
     def __init__(self,
                  p_log_file: str,
-                 p_log_level: ST.LOGLEVEL = ST.LOGLEVEL.NOTSET,
+                 p_log_level: ST.LogLevel = ST.LogLevel.NOTSET,
                  p_local_tz: str = None):
         """Initialize the Logger class.
 
@@ -32,14 +32,14 @@ class Logger(object):
 
         Args:
             p_log_file (path): full path to log file location
-            p_log_level (int -> ST.LOGLEVEL, optional):
+            p_log_level (ST.LogLevel -> int, optional):
                 A valid log level value. Defaults to NOTSET (= 0).
             p_local_tz (string, optional): A valid Olson tz name value.
                                            Defaults to None.
         """
         self.LOGLEVEL = p_log_level
         self.LOGFILE = p_log_file
-        erep_dttm = UT.get_dttm(ST.TIMEZONE.EREP)
+        erep_dttm = UT.get_dttm(ST.TimeZone.EREP)
         local_dttm = None
         local_dttm = UT.get_dttm(p_local_tz)\
             if p_local_tz not in (None, "None", "")\
@@ -49,9 +49,9 @@ class Logger(object):
         f.write("\n==     Local Time: {} ({})".format(
                 local_dttm.curr_lcl, p_local_tz))
         f.write("\n== eRepublik Time: {} ({})".format(
-                erep_dttm.curr_lcl, ST.TIMEZONE.EREP))
+                erep_dttm.curr_lcl, ST.TimeZone.EREP))
         f.write("\n== Universal Time: {} ({})\n\n".format(
-                erep_dttm.curr_utc, ST.TIMEZONE.UTC))
+                erep_dttm.curr_utc, ST.TimeZone.UTC))
         f.close()
 
     def set_log(self):
@@ -70,7 +70,7 @@ class Logger(object):
         self.log.addHandler(logF)
 
     def write_log(self,
-                  p_msg_level: ST.LOGLEVEL.t_values,
+                  p_msg_level: ST.LogLevel,
                   p_msg_text: str,
                   p_traceback: bool = False):
         """Write message at designated level.
@@ -79,23 +79,23 @@ class Logger(object):
         If requested, append a trace to the log message.
 
         Args:
-            p_msg_level (int -> ST.LOGLEVEL.t_values): Valid LOGLEVEL value
+            p_msg_level (ST.LogLevel -> int): Valid log level value
             p_msg_text (string): Content of the message to log
             p_traceback (bool, optional): Write trace to log if True.
                                           Defaults to False.
         """
         if p_traceback:
-            p_msg_text += ST.TXT.LF +\
-                          repr(traceback.format_stack()) + ST.TXT.LF
-        if p_msg_level in (ST.LOGLEVEL.CRITICAL, ST.LOGLEVEL.FATAL):
+            p_msg_text += ST.TextHelp.LF +\
+                          repr(traceback.format_stack()) + ST.TextHelp.LF
+        if p_msg_level in (ST.LogLevel.CRITICAL, ST.LogLevel.FATAL):
             logging.fatal(p_msg_text)
-        elif p_msg_level == ST.LOGLEVEL.ERROR:
+        elif p_msg_level == ST.LogLevel.ERROR:
             logging.error(p_msg_text)
-        elif p_msg_level == ST.LOGLEVEL.WARNING:
+        elif p_msg_level == ST.LogLevel.WARNING:
             logging.warning(p_msg_text)
-        elif p_msg_level in (ST.LOGLEVEL.NOTICE, ST.LOGLEVEL.INFO):
+        elif p_msg_level in (ST.LogLevel.NOTICE, ST.LogLevel.INFO):
             logging.info(p_msg_text)
-        elif p_msg_level == ST.LOGLEVEL.DEBUG:
+        elif p_msg_level == ST.LogLevel.DEBUG:
             logging.debug(p_msg_text)
 
     def close_log(self):
