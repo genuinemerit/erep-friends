@@ -50,16 +50,10 @@ class Utils(object):
         fields = ['tz', 'curr_lcl', 'curr_lcl_short', 'next_lcl',
                   'curr_utc', 'next_utc', 'curr_ts']
         dttm = namedtuple("dttm", " ".join(fields))
-
-        pp(("p_tzone", p_tzone))
-
         lcl_dttm = arrow.now(p_tzone)
         dttm.curr_lcl = str(lcl_dttm.format(long_format))
         dttm.curr_lcl_short = str(lcl_dttm.format(short_format))
         dttm.next_lcl = str(lcl_dttm.shift(days=+1).format(long_format))
-
-        pp(("dttm.curr_lcl", dttm.curr_lcl))
-
         utc_dttm = arrow.utcnow()
         dttm.curr_utc = str(utc_dttm.format(long_format))
         dttm.next_utc = str(utc_dttm.shift(days=+1).format(long_format))

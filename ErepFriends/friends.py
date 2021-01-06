@@ -315,9 +315,9 @@ class ErepFriends(object):
         else:
             # Establish if user credentials work
             print("\nEnter eRepublik Email Login ID and Password to enable"
-                  "gathering full friends list.")
+                  " gathering full friends list.")
             print("Password won't display on the screen."
-                  "Both Email and Password are stored encrypted.")
+                  " Both Email and Password are stored encrypted.")
             erep_email_id = input("eRep Email Login ID: ")
             erep_pass = getpass.getpass("eRep Password: ")
             response_text = self.get_local_login_file()
@@ -454,18 +454,19 @@ class ErepFriends(object):
 
         data_rows = self.DB.query_user(p_decrypt=True)
         if len(data_rows) < 1:
-            # No, so...
             id_info, erep_email_id, erep_pass = self.login_erep()
             u_row = ST.UserFields
             u_row.user_erep_profile_id = id_info.profile_id
             u_row.user_erep_email = erep_email_id
             u_row.user_erep_password = erep_pass
-            u_row.encrypt_all = 'False'
+            u_row.encrypt_all = 'True'
             self.DB.write_db("add", "user", u_row, None, True)
             f_rec = self.get_user_profile(id_info)
+            # Encryption should be driven by user setting:
+            self.DB.write_db("add", "friends", f_rec, None, True)
 
-            pp(("f_rec", f_rec))
-            # ==> Next, Write a friends record for the user
+
+
 
 
     ## XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX

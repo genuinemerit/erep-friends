@@ -285,24 +285,29 @@ class Dbase(object):
         data_cols = ST.DBSCHEMA[p_tbl_nm]["data"]
         return(a_fields, aud_cols, d_fields, data_cols)
 
-    def set_data_cols(self, d_fields, data_cols,
-                      aud_cols, p_data) -> tuple:
-        """Set "data" values and hash_id. Encrypt if needed.
+    def set_data_cols(self, p_tbl_nm, d_fields, data_cols,
+                      aud_cols, p_data,
+                      encrypt_all, encrypt_key) -> tuple:
+        """Set "data" values and hash_id. Encrypt if requested.
 
         Returns:
             tuple (updated audit dataclass,
                    updated data dataclass)
         """
         hash_str = ""
+        if p_tbl_nm == "user":
+            data_cols.encrypt_key = encrypt_key
+        if str(encrypt_all) == "True":
+            aud_cols.is_encrypted = "True"
         hash_flds = (cnm for cnm in d_fields if cnm != "encrypt_key")
         for cnm in hash_flds:
             # set local data class to values passed in as param
             setattr(data_cols, cnm, getattr(p_data, cnm))
-            val = getattr(data_cols, cnm)
-            if val is not None:     # then add to hash and encrypt
+            val = str(getattr(data_cols, cnm))
+            if val not in (None, "None", ""):        # then hash
                 hash_str += val
-                if aud_cols.is_encrypted == "True":
-                    encrypt_val = CI.encrypt(val, data_cols.encrypt_key)
+                if aud_cols.is_encrypted == "True":  # and encrypt
+                    encrypt_val = CI.encrypt(val, encrypt_key)
                     setattr(data_cols, cnm, encrypt_val)
         aud_cols.hash_id = UT.get_hash(hash_str)
         return(data_cols, aud_cols)
@@ -351,15 +356,22 @@ class Dbase(object):
         """
         a_fields, aud_cols, d_fields, data_cols = self.get_schema(p_tbl_nm)
         aud_cols.uid = UT.get_uid()
-        dttm = UT.get_dttm()
+        dttm = UT.get_dttm('UTC')
         aud_cols.create_ts = dttm.curr_utc
         aud_cols.update_ts = dttm.curr_utc
         aud_cols.delete_ts = None
-        if p_tbl_nm == "user":
+        if p_encrypt:
             aud_cols.is_encrypted = "True"
-            data_cols.encrypt_key = CI.set_key()
-        data_cols, aud_cols = self.set_data_cols(d_fields, data_cols,
-                                                 aud_cols, p_data)
+            if p_tbl_nm == "user":
+                encrypt_key = CI.set_key()
+                encrypt_all = data_cols.encrypt_all
+            else:
+                u_list = self.query_user()
+                encrypt_key = u_list[0]["data"].encrypt_key
+                encrypt_all = u_list[0]["data"].encrypt_all
+        data_cols, aud_cols = self.set_data_cols(p_tbl_nm, d_fields,
+                                                 data_cols, aud_cols, p_data,
+                                                 encrypt_all, encrypt_key)
         sql = self.set_insert_sql(p_tbl_nm, d_fields, a_fields,
                                   data_cols, aud_cols)
         return(d_fields, data_cols, sql)

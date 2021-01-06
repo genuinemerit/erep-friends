@@ -44,21 +44,8 @@ class Logger(object):
         self.LOGLEVEL = p_log_level
         self.LOGFILE = p_log_file
         erep_dttm = copy(UT.get_dttm(ST.TimeZone.EREP))
-        pp(("erep_dttm", erep_dttm))
-        pp(("erep_dttm.curr_lcl", erep_dttm.curr_lcl))
-
         localhost_tz = get_localzone()
         localhost_dttm = copy(UT.get_dttm(localhost_tz.zone))
-        pp(("localhost_dttm", localhost_dttm))
-        pp(("localhost_dttm.curr_lcl", localhost_dttm.curr_lcl))
-
-        pp(("erep_dttm.curr_lcl", erep_dttm.curr_lcl))
-
-        if erep_dttm == localhost_dttm:
-            print("Rats. They are equal. WWWHHHYYYY????")
-        else:
-            print("Good. They are not equal.")
-
         f = open(self.LOGFILE, 'a+')
         f.write("\n== Log Session started")
         f.write("\n== Localhost Time: {} ({})".format(
