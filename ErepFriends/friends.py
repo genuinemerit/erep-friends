@@ -21,14 +21,15 @@ from pprint import pprint as pp  # noqa: F401
 from tkinter import messagebox, ttk
 
 import requests
-from pytz import all_timezones
 from tornado.options import define, options
 
 from dbase import Dbase
 from logger import Logger
 from structs import Structs
+from utils import Utils
 
 ST = Structs()
+UT = Utils()
 
 
 class ErepFriends(object):
@@ -39,7 +40,6 @@ class ErepFriends(object):
         self.set_environment()
 
         """
-        self.set_erep_headers()
 
         # This is in-memory text and scrub
         # Maybe want to separate this from pure GUI logic
@@ -229,52 +229,64 @@ class ErepFriends(object):
         Totally guessing here. We get a 302 response here, so good.
         Seems to imply it is doing something - redirecting to splash
           page probably.
-        But not sure if it is really terminating the user session?
+        Not sure if it is really terminating the user session.
         """
-        formdata = {'_token': self.erep_csrf_token,
-                    "remember": '1',
-                    'commit': 'Logout'}
-        ereparse_textout = self.erep_rqst.post(self.opt.erep_url + "/logout",
-                                               data=formdata,
-                                               allow_redirects=True)
-        if self.logme:
-            msg = "logout status code: {}".format(ereparse_textout.status_code)
-            self.LOG.write_log(ST.LogLevel.INFO, msg)
-        if ereparse_textout.status_code == 302:
-            self.erep_csrf_token = None
-            self.erep_rqst.get(self.opt.erep_url)
-            # > GUI stuff:
-            # self.status_text.config(text = self.opt.w_txt_disconnected)
+        if self.erep_csrf_token is not None:
+            formdata = {'_token': self.erep_csrf_token,
+                        "remember": '1',
+                        'commit': 'Logout'}
+            response = self.erep_rqst.post(self.opt.erep_url + "/logout",
+                                           data=formdata,
+                                           allow_redirects=True)
+            if self.logme:
+                msg = "logout status code: {}".format(response.status_code)
+                self.LOG.write_log(ST.LogLevel.INFO, msg)
+            if response.status_code == 302:
+                self.erep_csrf_token = None
+                self.erep_rqst.get(self.opt.erep_url)
 
-    def get_login_data_from_erep(self,
-                                 p_email: str,
-                                 p_password: str) -> str:
+    def get_token(self, response_text: str):
+        """Get/save CSRF token.
+
+        Args:
+            response_text (string): full response text from eRep login GET
+        """
+        parse_text = response_text.split("var csrfToken = '")
+        parse_text = parse_text[1].split("';")
+        self.erep_csrf_token = parse_text[0]
+
+    def login_erep(self, p_email: str, p_password: str,
+                   p_save_response: bool) -> str:
         """Login to eRepublik to confirm credentials and get profile ID.
 
+        Args:
+            p_email (str): User login email address
+            p_password (str): User login password
+            p_save_response (bool): If True, store response text as a file
+
         Returns:
-            text or bool: full response.text from eRep login GET  or  False
+            text: full response.text from eRep login GET  or  None
         """
-        response_text = False
         formdata = {'citizen_email': p_email,
                     'citizen_password': p_password,
                     "remember": '1', 'commit': 'Login'}
-        ereparse_textin = self.erep_rqst.post(self.opt.erep_url + "/login",
-                                              data=formdata,
-                                              allow_redirects=False)
+        response = self.erep_rqst.post(self.opt.erep_url + "/login",
+                                       data=formdata,
+                                       allow_redirects=False)
         if self.logme:
-            msg = "login status code: {}".format(ereparse_textin.status_code)
+            msg = "login status code: {}".format(response.status_code)
             self.LOG.write_log(ST.LogLevel.INFO, msg)
-        if ereparse_textin.status_code == 302:
-            erep_response = self.erep_rqst.get(self.opt.erep_url)
-            response_text = erep_response.text
-            with open(path.abspath(path.join(self.opt.log_path,
-                                             "login_response")), "w") as f:
-                f.write(response_text)
-            self.logout_erep()
-        return response_text
+        if response.status_code == 302:
+            response = self.erep_rqst.get(self.opt.erep_url)
+            self.get_token(response.text)
+            if p_save_response:
+                with open(path.abspath(path.join(self.opt.log_path,
+                                                 "login_response")), "w") as f:
+                    f.write(response.text)
+        return response.text
 
-    def get_user_and_session_info(self, response_text: str):
-        """Extract token, ID and name from response text.
+    def get_user_info(self, response_text: str):
+        """Extract ID and name from response text.
 
         Args:
             response_text (string): full response text from eRep login GET
@@ -282,11 +294,10 @@ class ErepFriends(object):
         Returns:
             namedtuple: id_info.. profile_id, user_name
         """
+
+        print("login response_text: {}".format(response_text))
+
         id_info = namedtuple("id_info", "profile_id user_name")
-        # Get CSRF token.
-        parse_text = response_text.split("var csrfToken = '")
-        parse_text = parse_text[1].split("';")
-        self.erep_csrf_token = parse_text[0]
         # Get user profile ID.
         parse_text = response_text.split('"citizen":{"citizenId":')
         parse_text = parse_text[1].split(",")
@@ -303,7 +314,7 @@ class ErepFriends(object):
             self.LOG.write_log(ST.LogLevel.INFO, msg)
         return id_info
 
-    def login_erep(self) -> tuple:
+    def interactive_login_erep(self) -> tuple:
         """Connect to eRepublik using valid email and password.
 
         Returns:
@@ -314,6 +325,7 @@ class ErepFriends(object):
             raise Exception(ConnectionError, msg)
         else:
             # Establish if user credentials work
+            # Replace with data from user record if it exists
             print("\nEnter eRepublik Email Login ID and Password to enable"
                   " gathering full friends list.")
             print("Password won't display on the screen."
@@ -321,25 +333,28 @@ class ErepFriends(object):
             erep_email_id = input("eRep Email Login ID: ")
             erep_pass = getpass.getpass("eRep Password: ")
             response_text = self.get_local_login_file()
-            if not response_text:
-                response_text = self.get_login_data_from_erep(erep_email_id,
-                                                              erep_pass)
+            if response_text:
+                if self.logme:
+                    msg = "Using cached login data for credentials"
+                    self.LOG.write_log(ST.LogLevel.INFO, msg)
+            else:
+                response_text = self.login_erep(erep_email_id,
+                                                erep_pass, True)
                 if not response_text:
-                    response_text = self.get_local_login_file()
                     if not response_text:
                         msg = "Login failed.\nCheck credentials."
                         raise Exception(ConnectionError, msg)
-            id_info = self.get_user_and_session_info(response_text)
+            id_info = self.get_user_info(response_text)
             return (id_info, erep_email_id, erep_pass)
 
-    def get_user_profile(self, p_id_info: ST.Types.t_namedtuple)-> ST.FriendsFields:
+    def get_user_profile(self, profile_id: str):
         """Retrieve profile for user from eRepublik.
 
         Get the user's eRepublik profile ID from config file.
         Set the user name and grab the user's avatar file.
 
         Args:
-            p_id_info (namedtuple): (eprofile_id user_name)
+            profile_id (str): citizen ID
 
         Raises:
             ValueError if profile ID returns 404 from eRepublik
@@ -347,24 +362,24 @@ class ErepFriends(object):
         Returns:
             dataclass instance: ST.FriendsFields
         """
-        file_nm = "profile_response_{}".format(p_id_info.profile_id)
+        file_nm = "profile_response_{}".format(profile_id)
         profile_file = path.abspath(path.join(self.opt.log_path, file_nm))
         if Path(profile_file).exists():
             with open(profile_file) as pf:
                 profile_data = json.loads(pf.read())        # convert to dict
         else:
             profile_url = self.opt.erep_url +\
-                "/main/citizen-profile-json/" + p_id_info.profile_id
-            erep_response = requests.get(profile_url)       # returns JSON
-            if erep_response.status_code == 404:
+                "/main/citizen-profile-json/" + profile_id
+            response = requests.get(profile_url)       # returns JSON
+            if response.status_code == 404:
                 msg = "Invalid eRepublik Profile ID."
                 raise Exception(ValueError, msg)
-            profile_data = json.loads(erep_response.text)   # convert to dict
+            profile_data = json.loads(response.text)   # convert to dict
             with open(profile_file, "w") as f:
-                f.write(str(erep_response.text))            # save a copy
+                f.write(str(response.text))            # save a copy
 
         f_rec = ST.FriendsFields
-        f_rec.profile_id = p_id_info.profile_id
+        f_rec.profile_id = profile_id
         f_rec.name = profile_data["citizen"]["name"]
         f_rec.is_alive = profile_data["citizen"]["is_alive"]
         f_rec.is_adult = profile_data["isAdult"]
@@ -389,41 +404,113 @@ class ErepFriends(object):
         f_rec.is_top_player = profile_data['isTopPlayer']
         f_rec.is_party_member = profile_data["isPartyMember"]
         f_rec.is_party_president = profile_data["isPartyPresident"]
-        f_rec.party_name = profile_data["partyData"]["name"]
-        f_rec.party_avatar_link =\
-            "https:" + profile_data["partyData"]["avatar"]
-        f_rec.party_orientation =\
-            profile_data["partyData"]["economical_orientation"]
-        f_rec.party_url = self.opt.erep_url + "/party/" +\
-            profile_data["partyData"]["stripped_title"] + "-" +\
-            str(profile_data["partyData"]["id"]) + "/1"
-        f_rec.militia_name =\
-            profile_data['military']['militaryUnit']['name']
-        f_rec.militia_url = self.opt.erep_url +\
-            "/military/military-unit/" +\
-            str(profile_data['military']['militaryUnit']['id']) + "/overview"
-        f_rec.militia_size =\
-            profile_data['military']['militaryUnit']['member_count']
-        f_rec.militia_avatar_link =\
-            "https:" + profile_data['military']['militaryUnit']["avatar"]
+
+        if "partyData" in profile_data.keys():
+            f_rec.party_name = profile_data["partyData"]["name"]
+            f_rec.party_avatar_link =\
+                "https:" + profile_data["partyData"]["avatar"]
+            f_rec.party_orientation =\
+                profile_data["partyData"]["economical_orientation"]
+            f_rec.party_url = self.opt.erep_url + "/party/" +\
+                profile_data["partyData"]["stripped_title"] + "-" +\
+                str(profile_data["partyData"]["id"]) + "/1"
+
         f_rec.military_rank =\
             profile_data['military']['militaryUnit']["militaryRank"]
         f_rec.aircraft_rank =\
             profile_data['military']['militaryData']["aircraft"]["name"]
         f_rec.ground_rank =\
             profile_data['military']['militaryData']["ground"]["name"]
-        f_rec.newspaper_name =\
-            profile_data['newspaper']['name']
-        f_rec.newspaper_avatar_link =\
-            "https:" + profile_data['newspaper']["avatar"]
-        f_rec.newspaper_url = self.opt.erep_url + "/main/newspaper/" +\
-            profile_data['newspaper']["stripped_title"] + "-" +\
-            str(profile_data['newspaper']["id"]) + "/1"
+
+        if "militaryUnit" in profile_data["military"].keys():
+            f_rec.militia_name =\
+                profile_data['military']['militaryUnit']['name']
+            f_rec.militia_url = self.opt.erep_url +\
+                "/military/military-unit/" +\
+                str(profile_data['military']['militaryUnit']['id']) + "/overview"
+            f_rec.militia_size =\
+                profile_data['military']['militaryUnit']['member_count']
+            f_rec.militia_avatar_link =\
+                "https:" + profile_data['military']['militaryUnit']["avatar"]
+
+        if "newspaper" in profile_data.keys():
+            f_rec.newspaper_name =\
+                profile_data['newspaper']['name']
+            f_rec.newspaper_avatar_link =\
+                "https:" + profile_data['newspaper']["avatar"]
+            f_rec.newspaper_url = self.opt.erep_url + "/main/newspaper/" +\
+                profile_data['newspaper']["stripped_title"] + "-" +\
+                str(profile_data['newspaper']["id"]) + "/1"
+
+        # Remove embedded apostrophes. They give Sqlite a headache.
+        for field in ST.FIELDS["friends"]:
+            val = str(getattr(f_rec, field)).replace("'", "_")
+            setattr(f_rec, field, val)
 
         if self.logme and self.opt.log_level == ST.LogLevel.DEBUG:
             msg = "user_profile: {}".format(profile_data)
             self.LOG.write_log(ST.LogLevel.DEBUG, msg)
         return f_rec
+
+    def request_friends_data(self, profile_id: str) -> str:
+        """Send PM-posting request to eRepublik.
+
+        The PM Posting request will fail due to captcha's.
+        But we are really doing this in order to pull in the
+         friends list, which shows up in the response.
+
+        Args:
+            profile_id (str): citizen ID
+        Returns:
+            response text
+        """
+        msg_url = "{}/main/messages-compose/{}".format(self.opt.erep_url, profile_id)
+        msg_headers = {
+            "Referer": msg_url,
+            "X-Requested-With": "XMLHttpRequest"}
+        send_message = {
+            "_token": self.erep_csrf_token,
+            "citizen_name": profile_id,
+            "citizen_subject": "This is a test",
+            "citizen_message": "This is a test"}
+        msg_response = self.erep_rqst.post(msg_url, data=send_message,
+                                           headers=msg_headers,
+                                           allow_redirects=False)
+        if self.logme:
+            msg = "friends response code: {}".format(msg_response.status_code)
+            self.LOG.write_log(ST.LogLevel.INFO, msg)
+        with open(path.abspath(path.join(self.opt.log_path, "friends_response")),
+                "w") as f:
+            f.write(msg_response.text)
+        return msg_response.text
+
+    def get_friends_data(self, profile_id: str):
+        """Get friends list.
+
+        Read local cached copy of previous response if it exists.
+        @DEV - make this an option once GUI is in place
+        Otherwise make a bogus attempt to send an in-game PM.
+
+        Args:
+            profile_id (str): citizen ID, etc.
+        """
+        friends_file = path.abspath(path.join(self.opt.log_path, "friends_response"))
+        if Path(friends_file).exists():
+            with open(friends_file) as ff:
+                friends_data = ff.read()
+        else:
+            friends_data = self.request_friends_data(profile_id)
+        # parse friends data file or response
+        friends_data = friends_data.replace("\t", "").replace("\n", "")
+        friends_data = friends_data.split('$j("#citizen_name").tokenInput(')
+        friends_data = friends_data[1].split(', {prePopulate:')
+        friends_data = json.loads(friends_data[0])
+
+        for friend in friends_data:
+            print("Getting profile for {} ... ".format["name"])
+            f_rec = self.get_user_profile(friend["id"])
+            self.DB.write_db("add", "friends", f_rec, None, False)
+            time.sleep(.300)
 
     def set_environment(self):
         """Handle basic set-up as needed.
@@ -454,18 +541,22 @@ class ErepFriends(object):
 
         data_rows = self.DB.query_user(p_decrypt=True)
         if len(data_rows) < 1:
-            id_info, erep_email_id, erep_pass = self.login_erep()
+            id_info, erep_email_id, erep_pass = self.interactive_login_erep()
+            self.logout_erep()
             u_row = ST.UserFields
             u_row.user_erep_profile_id = id_info.profile_id
             u_row.user_erep_email = erep_email_id
             u_row.user_erep_password = erep_pass
-            u_row.encrypt_all = 'True'
+            u_row.encrypt_all = 'False'
             self.DB.write_db("add", "user", u_row, None, True)
-            f_rec = self.get_user_profile(id_info)
-            # Encryption should be driven by user setting:
-            self.DB.write_db("add", "friends", f_rec, None, True)
-
-
+            f_rec = self.get_user_profile(id_info.profile_id)
+            self.DB.write_db("add", "friends", f_rec, None, False)
+            time.sleep(1)
+            self.login_erep(erep_email_id, erep_pass, False)
+            self.get_friends_data(id_info.profile_id)
+            self.logout_erep()
+        else:
+            self.get_friends_data(data_rows[0]["data"].user_erep_profile_id)
 
 
 
@@ -673,9 +764,9 @@ class ErepFriends(object):
                     profile_id = profile_id.split("\t")[0]
                 time.sleep(1)
                 profile_url = self.opt.erep_url + "/main/citizen-profile-json/" + profile_id
-                erep_response = requests.get(profile_url)
+                response = requests.get(profile_url)
                 # Reject list if it contains an invalid Profile ID
-                if erep_response.status_code == 404:
+                if response.status_code == 404:
                     messagebox.showwarning(title = self.opt.m_warn_title,
                             message = self.opt.m_bad_list,
                             detail = "\n{}".format(self.opt.m_bad_id.replace("[citizen]", profile_id)))
@@ -684,7 +775,7 @@ class ErepFriends(object):
                     return False
                 else:
                     # Get current name for Profile ID from eRepublik
-                    citizen_profile = json.loads(erep_response.text)
+                    citizen_profile = json.loads(response.text)
                     self.valid_list.append(profile_id + "\t{}".format(citizen_profile["citizen"]["name"]))
         # Refresh the ID list, showing citizen name along with each profile
         self.status_text.config(text=self.opt.m_ids_verified)

@@ -4,7 +4,8 @@
 """
 Simple database manager for erep_friends using sqlite3.
 
-Also does some file management.
+@DEV
+  Add methods to handle standard flat file writes, reads.
 
 Module:    dbase
 Class:     Dbase
@@ -360,15 +361,15 @@ class Dbase(object):
         aud_cols.create_ts = dttm.curr_utc
         aud_cols.update_ts = dttm.curr_utc
         aud_cols.delete_ts = None
-        if p_encrypt:
+        if p_tbl_nm == "user":
+            encrypt_key = CI.set_key()
+            encrypt_all = data_cols.encrypt_all
+        else:
+            u_list = self.query_user()
+            encrypt_key = u_list[0]["data"].encrypt_key
+            encrypt_all = u_list[0]["data"].encrypt_all
+        if p_encrypt or encrypt_all in (True, "True"):
             aud_cols.is_encrypted = "True"
-            if p_tbl_nm == "user":
-                encrypt_key = CI.set_key()
-                encrypt_all = data_cols.encrypt_all
-            else:
-                u_list = self.query_user()
-                encrypt_key = u_list[0]["data"].encrypt_key
-                encrypt_all = u_list[0]["data"].encrypt_all
         data_cols, aud_cols = self.set_data_cols(p_tbl_nm, d_fields,
                                                  data_cols, aud_cols, p_data,
                                                  encrypt_all, encrypt_key)
@@ -421,6 +422,7 @@ class Dbase(object):
                 print("SQL execution failed")
         else:
             try:
+                # print(sql)
                 cur.execute(sql)
                 self.dmain_conn.commit()
             except IOError:
