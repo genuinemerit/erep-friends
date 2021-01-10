@@ -276,13 +276,29 @@ class ErepFriends(object):
         if self.logme:
             msg = "login status code: {}".format(response.status_code)
             self.LOG.write_log(ST.LogLevel.INFO, msg)
+        if p_save_response:
+            with open(path.abspath(path.join(self.opt.log_path,
+                                                "login_response")), "w") as f:
+                f.write(response.text)
         if response.status_code == 302:
             response = self.erep_rqst.get(self.opt.erep_url)
             self.get_token(response.text)
-            if p_save_response:
-                with open(path.abspath(path.join(self.opt.log_path,
-                                                 "login_response")), "w") as f:
-                    f.write(response.text)
+        else:
+            # Don't understand yet why sometimes I get a 200 response
+            #  when I'd been getting 302 for a while. The 200 response
+            #  basically means the login didn't work and it is still
+            #  sitting there on the login page.  The response is such
+            #  a jumble of javascript it is hard to see what is really
+            #  being presented. But there seems to be at least the
+            #  possibility that a captcha is being used sometimes.
+            # Maybe that is random. Or maybe if it has notice a lot
+            #  of activity from my IP recently that seems to indicate
+            #  a script is being used?  Seems like when I've seen this
+            #  before I just had to wait several hours and then it started
+            #  working OK again.
+            msg = "Login connection failed. See response text in log." +\
+                  "\n Probably a captcha. May want to wait a few hours."
+            raise Exception(ConnectionError, msg)
         return response.text
 
     def get_user_info(self, response_text: str):
@@ -293,9 +309,17 @@ class ErepFriends(object):
 
         Returns:
             namedtuple: id_info.. profile_id, user_name
-        """
 
-        print("login response_text: {}".format(response_text))
+        This shows up about line 41 of the response text:
+        {"citizenId":9194827,"isOrganization":0,"isAdult":true,"country":24,"citizenshipCountryId":24,"name":"RF Williams","avatar":"https://cdnt.erepublik.net/tSSiPU1zChZhwB6TromFPARPJrQ=/55x55/smart/avatars/Citizens/2017/05/04/0aff92a6d29c160c51d5843f6a445c01.png?fad2c777d8f3f833ce09201bd7f8bb2c"
+
+        This shows up in the login response text too, but much further down.
+        Since I'll grab this info and more from the profile later on, just go for the earlier
+        instance of ID and Name here.
+
+        citizenInfo: {"id":9194827,"name":"RF Williams","sex":"M","created_at":"2017-05-04 17:29:03","is_organization":0,"is_alive":1,"is_validated":1,"has_avatar":1,"parent_id":0,"is_payer":0,"has_jid":1,"avatar_version":"fad2c777d8f3f833ce09201bd7f8bb2c","avatar_file":"png","level":52,"avatar":"https://cdnt.erepublik.net/tSSiPU1zChZhwB6TromFPARPJrQ=/55x55/smart/avatars/Citizens/2017/05/04/0aff92a6d29c160c51d5843f6a445c01.png?fad2c777d8f3f833ce09201bd7f8bb2c","profile_url":"//m.erepublik.com/en/citizen/profile/9194827"},
+        """
+        # print("login response_text: {}".format(response_text))
 
         id_info = namedtuple("id_info", "profile_id user_name")
         # Get user profile ID.
@@ -389,14 +413,6 @@ class ErepFriends(object):
             profile_data["citizenAttributes"]["experience_points"]
         f_rec.friends_count = profile_data["friends"]["number"]
         f_rec.achievements_count = len(profile_data["achievements"])
-        f_rec.citizenship_country =\
-            profile_data["location"]["citizenshipCountry"]["name"]
-        f_rec.residence_city =\
-            profile_data["city"]["residenceCity"]["name"]
-        f_rec.residence_region =\
-            profile_data["city"]["residenceCity"]["region_name"]
-        f_rec.residence_country =\
-            profile_data["city"]["residenceCity"]["country_name"]
         f_rec.is_in_congress = profile_data['isCongressman']
         f_rec.is_ambassador = profile_data['isAmbassador']
         f_rec.is_dictator = profile_data['isDictator']
@@ -405,44 +421,64 @@ class ErepFriends(object):
         f_rec.is_party_member = profile_data["isPartyMember"]
         f_rec.is_party_president = profile_data["isPartyPresident"]
 
-        if "partyData" in profile_data.keys():
-            f_rec.party_name = profile_data["partyData"]["name"]
+        f_rec.citizenship_country =\
+            profile_data["location"]["citizenshipCountry"]["name"]
+
+        if not isinstance(profile_data["military"], bool)\
+          and not isinstance(profile_data["military"]["militaryData"], bool):
+            f_rec.aircraft_rank =\
+                profile_data['military']['militaryData']["aircraft"]["name"]
+            f_rec.ground_rank =\
+                profile_data['military']['militaryData']["ground"]["name"]
+
+        if "residenceCity" in profile_data.keys():
+            f_rec.residence_city =\
+                profile_data["city"]["residenceCity"]["name"]
+            f_rec.residence_region =\
+                profile_data["city"]["residenceCity"]["region_name"]
+            f_rec.residence_country =\
+                profile_data["city"]["residenceCity"]["country_name"]
+
+        if "partyData" in profile_data.keys()\
+          and profile_data["partyData"] != []\
+          and not isinstance(profile_data["partyData"], bool)\
+          and not isinstance(profile_data["partyData"], str):
+            f_rec.party_name = str(profile_data["partyData"]["name"])
             f_rec.party_avatar_link =\
                 "https:" + profile_data["partyData"]["avatar"]
             f_rec.party_orientation =\
                 profile_data["partyData"]["economical_orientation"]
             f_rec.party_url = self.opt.erep_url + "/party/" +\
-                profile_data["partyData"]["stripped_title"] + "-" +\
+                str(profile_data["partyData"]["stripped_title"]) + "-" +\
                 str(profile_data["partyData"]["id"]) + "/1"
 
-        f_rec.military_rank =\
-            profile_data['military']['militaryUnit']["militaryRank"]
-        f_rec.aircraft_rank =\
-            profile_data['military']['militaryData']["aircraft"]["name"]
-        f_rec.ground_rank =\
-            profile_data['military']['militaryData']["ground"]["name"]
-
-        if "militaryUnit" in profile_data["military"].keys():
+        if "militaryUnit" in profile_data["military"].keys()\
+          and not isinstance(profile_data["military"], bool)\
+          and not isinstance(profile_data["military"]["militaryUnit"], bool):
             f_rec.militia_name =\
-                profile_data['military']['militaryUnit']['name']
+                str(profile_data['military']['militaryUnit']['name'])
+            f_rec.military_rank =\
+                profile_data['military']['militaryUnit']["militaryRank"]
             f_rec.militia_url = self.opt.erep_url +\
                 "/military/military-unit/" +\
-                str(profile_data['military']['militaryUnit']['id']) + "/overview"
+                str(profile_data['military']['militaryUnit']['id']) +\
+                "/overview"
             f_rec.militia_size =\
                 profile_data['military']['militaryUnit']['member_count']
             f_rec.militia_avatar_link =\
                 "https:" + profile_data['military']['militaryUnit']["avatar"]
 
-        if "newspaper" in profile_data.keys():
+        if "newspaper" in profile_data.keys()\
+          and not isinstance(profile_data['newspaper'], bool):
             f_rec.newspaper_name =\
-                profile_data['newspaper']['name']
+                str(profile_data['newspaper']['name'])
             f_rec.newspaper_avatar_link =\
                 "https:" + profile_data['newspaper']["avatar"]
             f_rec.newspaper_url = self.opt.erep_url + "/main/newspaper/" +\
-                profile_data['newspaper']["stripped_title"] + "-" +\
+                str(profile_data['newspaper']["stripped_title"]) + "-" +\
                 str(profile_data['newspaper']["id"]) + "/1"
 
-        # Remove embedded apostrophes. They give Sqlite a headache.
+        # Cast to string and remove embedded apostrophes.
         for field in ST.FIELDS["friends"]:
             val = str(getattr(f_rec, field)).replace("'", "_")
             setattr(f_rec, field, val)
@@ -464,7 +500,8 @@ class ErepFriends(object):
         Returns:
             response text
         """
-        msg_url = "{}/main/messages-compose/{}".format(self.opt.erep_url, profile_id)
+        msg_url = "{}/main/messages-compose/{}".format(self.opt.erep_url,
+                                                       profile_id)
         msg_headers = {
             "Referer": msg_url,
             "X-Requested-With": "XMLHttpRequest"}
@@ -479,8 +516,8 @@ class ErepFriends(object):
         if self.logme:
             msg = "friends response code: {}".format(msg_response.status_code)
             self.LOG.write_log(ST.LogLevel.INFO, msg)
-        with open(path.abspath(path.join(self.opt.log_path, "friends_response")),
-                "w") as f:
+        with open(path.abspath(path.join(self.opt.log_path,
+                                         "friends_response")), "w") as f:
             f.write(msg_response.text)
         return msg_response.text
 
@@ -494,7 +531,8 @@ class ErepFriends(object):
         Args:
             profile_id (str): citizen ID, etc.
         """
-        friends_file = path.abspath(path.join(self.opt.log_path, "friends_response"))
+        friends_file = path.abspath(path.join(self.opt.log_path,
+                                              "friends_response"))
         if Path(friends_file).exists():
             with open(friends_file) as ff:
                 friends_data = ff.read()
@@ -507,7 +545,7 @@ class ErepFriends(object):
         friends_data = json.loads(friends_data[0])
 
         for friend in friends_data:
-            print("Getting profile for {} ... ".format["name"])
+            print("Getting profile for {} ... ".format(friend["name"]))
             f_rec = self.get_user_profile(friend["id"])
             self.DB.write_db("add", "friends", f_rec, None, False)
             time.sleep(.300)
