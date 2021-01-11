@@ -2,10 +2,10 @@
 #!/usr/bin/python3  # noqa: E265
 
 """
-Manage eRepublik friends list.
+Manage eRepublik friends data and rules.
 
-Module:    friends.py
-Class:     ErepFriends/0  inherits object
+Module:    controls.py
+Class:     Controls/0  inherits object
 Author:    PQ <pq_rfw @ pm.me>
 """
 import fnmatch
@@ -32,14 +32,23 @@ ST = Structs()
 UT = Utils()
 
 
-class ErepFriends(object):
-    """Friends list manager for eRepublik."""
+class Controls(object):
+    """Rules engine for eRepublik."""
 
     def __init__(self):
-        """Initialize ErepFriends object."""
-        self.set_environment()
+        """Initialize Controls object.
 
-        """
+        The basic_interface widgets are just enough to complete the
+        environment set-up. The system uses Tkinter.
+        Will work on replacing it with Gtk.
+
+        Once set_environment is done, there will be proper config files,
+        a main database file, a log file (if desired), backup and archive
+        database files (if desired), a working connection to eRepublik,
+        and the databse will be populated with user and user's friend-list
+        citizen profile data.
+
+        self.set_environment()
 
         # This is in-memory text and scrub
         # Maybe want to separate this from pure GUI logic
@@ -64,9 +73,110 @@ class ErepFriends(object):
         self.___set_graphic_interface()
         """
 
-    def create_config_file(self,
+    def check_python_version(self):
+        """Validate Python version."""
+        if sys.version_info[:2] < (3, 6):
+            msg = "Python 3 is required.\n"
+            msg += "Your version is v{}.{}.{}".format(*sys.version_info)
+            raise Exception(EnvironmentError, msg)
+
+    def set_erep_headers(self):
+        """Set request headers for eRepublik calls."""
+        self.erep_csrf_token = None
+        self.erep_rqst = requests.Session()
+        self.erep_rqst.headers = None
+        self.erep_rqst.headers = {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',   # noqa: E501
+            'Accept-Encoding': 'gzip,deflate,sdch',
+            'Accept-Language': 'en-US,en;q=0.8',
+            'Connection': 'keep-alive',
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/31.0.1650.63 Chrome/31.0.1650.63 Safari/537.36'}  # noqa: E501
+
+    def set_main_data_paths(self):
+        """Make sure data directory exists."""
+        self.db_dir_path =\
+            path.abspath(path.realpath(ST.EnvFieldsReq.db_dir_path))
+        self.cfg_file_path =\
+            path.join(self.db_dir_path, ST.EnvFieldsReq.cfg_file_name)
+        if not Path(self.db_dir_path).exists():
+            mkdir(self.db_dir_path)
+
+    def set_config_file(self, p_db_dir_path: str,
+                           p_cfg_file_path: str):
+        """Define, create initial version of config file.
+
+        Args:
+            p_db_dir_path (string): parent path to main DB
+            p_cfg_file_path (string): full path to config file
+        """
+
+        if not Path(p_cfg_file_path).exists():
+            cfg_txt = "#views\n"
+            for c_nm in ST.GuiFields.keys():
+                c_val = getattr(ST.GuiFields, c_nm)
+                cfg_txt += "{} = '{}'\n".format(cfg_nm, cfg_val)
+            cfg_txt += "#environment - required\n"
+            for c_nm in ST.EnvFieldsReq.keys():
+                c_val = getattr(ST.EnvFieldsReq, c_nm)
+                cfg_val = p_db_dir_path if cfg_nm == 'db_dir_path' else cfg_val
+                cfg_txt += "{} = '{}'\n".format(cfg_nm, cfg_val)
+            with open(p_cfg_file_path, 'w') as cfgf:
+                cfgf.write(cfg_txt)
+            cfgf.close()
+
+    def set_required_options(self, p_cfg_file_path: str):
+        """Load settings from config file.
+
+        Args:
+            p_cfg_file_path (string): full path to config file
+        """
+        self.opt = None
+        for opt_nm in ST.GuiFields.keys():
+            define(opt_nm)
+        for opt_nm in ST.EnvFieldsReq.keys():
+            define(opt_nm)
+        options.parse_config_file(p_cfg_file_path)
+        self.opt = options
+
+    def logout_erep(self):
+        """Logout from eRepublik.
+
+        Kind of guessing here. A 302 (redirect) response seems good.
+        Redirecting to splash page probably.
+        """
+        if self.erep_csrf_token is not None:
+            formdata = {'_token': self.erep_csrf_token,
+                        "remember": '1',
+                        'commit': 'Logout'}
+            response = self.erep_rqst.post(self.opt.erep_url + "/logout",
+                                           data=formdata,
+                                           allow_redirects=True)
+            if self.logme:
+                msg = "logout status code: {}".format(response.status_code)
+                self.LOG.write_log(ST.LogLevel.INFO, msg)
+            if response.status_code == 302:
+                self.erep_csrf_token = None
+                response = self.erep_rqst.get(self.opt.erep_url)
+                if self.logme:
+                    msg = "logout response/redirect text: {}".format(response.text)
+                    self.LOG.write_log(ST.LogLevel.INFO, msg)
+
+    def close_controls(self):
+        """Close connections. Close the log."""
+        if self.erep_csrf_token is not None:
+            self.logout_erep()
+        try:
+            self.LOG.close_logs()
+        except Exception:
+            pass
+
+
+# #######################################################
+
+
+    def set_config_file_more(self,
                            p_cfg_file_path: str,
-                           p_data_path: str,
+                           p_db_dir_path: str,
                            p_bkup_db_path: str,
                            p_arcv_db_path: str,
                            parse_text_path: str,):
@@ -74,7 +184,7 @@ class ErepFriends(object):
 
         Args:
             p_cfg_file_path (string): full path to config file
-            p_data_path (string): parent path to main DB
+            p_db_dir_path (string): parent path to main DB
             p_bkup_db_path (string): parent path to backup DB
             p_arcv_db_path (string): parent path to archive DB
             parse_text_path (string): parent path to log file
@@ -82,7 +192,7 @@ class ErepFriends(object):
         cfg_txt = ""
         for cfg_nm in ST.FIELDS["config"]:
             cfg_val = getattr(ST.ConfigFields, cfg_nm)
-            cfg_val = p_data_path if cfg_nm == 'data_path' else cfg_val
+            cfg_val = p_db_dir_path if cfg_nm == 'db_dir_path' else cfg_val
             cfg_val = p_bkup_db_path if cfg_nm == 'bkup_db_path' else cfg_val
             cfg_val = p_arcv_db_path if cfg_nm == 'arcv_db_path' else cfg_val
             cfg_val = parse_text_path if cfg_nm == 'log_path' else cfg_val
@@ -106,10 +216,10 @@ class ErepFriends(object):
     def configure_database(self):
         """Instantiate Dbase object. Create databases."""
         self.DB = Dbase()
-        self.DB.config_db(self.opt.db_name, self.opt.data_path,
+        self.DB.config_db(self.opt.db_name, self.opt.db_dir_path,
                           self.opt.bkup_db_path, self.opt.arcv_db_path)
         main_db_file =\
-            path.join(self.opt.data_path, self.opt.db_name)
+            path.join(self.opt.db_dir_path, self.opt.db_name)
         if not Path(main_db_file).exists():
             self.DB.create_db()
 
@@ -196,17 +306,6 @@ class ErepFriends(object):
                 mkdir(log_path)
         return log_path
 
-    def set_erep_headers(self):
-        """Set request headers for eRepublik calls."""
-        self.erep_csrf_token = None
-        self.erep_rqst = requests.Session()
-        self.erep_rqst.headers = None
-        self.erep_rqst.headers = {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',   # noqa: E501
-            'Accept-Encoding': 'gzip,deflate,sdch',
-            'Accept-Language': 'en-US,en;q=0.8',
-            'Connection': 'keep-alive',
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/31.0.1650.63 Chrome/31.0.1650.63 Safari/537.36'}  # noqa: E501
 
     def get_local_login_file(self):
         """Use local copy of login response if available.
@@ -223,27 +322,7 @@ class ErepFriends(object):
                 lf.close()
         return response_text
 
-    def logout_erep(self):
-        """Logout from eRepublik.
 
-        Totally guessing here. We get a 302 response here, so good.
-        Seems to imply it is doing something - redirecting to splash
-          page probably.
-        Not sure if it is really terminating the user session.
-        """
-        if self.erep_csrf_token is not None:
-            formdata = {'_token': self.erep_csrf_token,
-                        "remember": '1',
-                        'commit': 'Logout'}
-            response = self.erep_rqst.post(self.opt.erep_url + "/logout",
-                                           data=formdata,
-                                           allow_redirects=True)
-            if self.logme:
-                msg = "logout status code: {}".format(response.status_code)
-                self.LOG.write_log(ST.LogLevel.INFO, msg)
-            if response.status_code == 302:
-                self.erep_csrf_token = None
-                self.erep_rqst.get(self.opt.erep_url)
 
     def get_token(self, response_text: str):
         """Get/save CSRF token.
@@ -384,7 +463,7 @@ class ErepFriends(object):
             ValueError if profile ID returns 404 from eRepublik
 
         Returns:
-            dataclass instance: ST.FriendsFields
+            dataclass instance: ST.ControlsFields
         """
         file_nm = "profile_response_{}".format(profile_id)
         profile_file = path.abspath(path.join(self.opt.log_path, file_nm))
@@ -402,7 +481,7 @@ class ErepFriends(object):
             with open(profile_file, "w") as f:
                 f.write(str(response.text))            # save a copy
 
-        f_rec = ST.FriendsFields
+        f_rec = ST.ControlsFields
         f_rec.profile_id = profile_id
         f_rec.name = profile_data["citizen"]["name"]
         f_rec.is_alive = profile_data["citizen"]["is_alive"]
@@ -555,27 +634,20 @@ class ErepFriends(object):
 
         Complete necessary set-up steps before proceeding
         """
-        if sys.version_info[:2] < (3, 6):
-            msg = "Python 3 is required.\n"
-            msg += "Your version is v{}.{}.{}".format(*sys.version_info)
-            raise Exception(EnvironmentError, msg)
+        self.check_python_version()
+        self.set_main_data_paths()
+        self.set_erep_headers()
 
-        data_path = path.abspath(path.realpath(ST.ConfigFields.data_path))
-        if not Path(data_path).exists():
-            mkdir(data_path)
-
-        cfg_file_path = path.join(data_path, ST.ConfigFields.cfg_file_name)
         if not Path(cfg_file_path).exists():
             bkup_db_path = self.set_backup_db_path()
             arcv_db_path = self.set_archive_db_path()
             log_path = self.set_log_file_path()
-            self.create_config_file(cfg_file_path, data_path,
+            self.set_config_file(cfg_file_path, db_dir_path,
                                     bkup_db_path, arcv_db_path,
                                     log_path)
         self.set_options(cfg_file_path)
         self.configure_database()
         self.enable_logging()
-        self.set_erep_headers()
 
         data_rows = self.DB.query_user(p_decrypt=True)
         if len(data_rows) < 1:
@@ -593,9 +665,8 @@ class ErepFriends(object):
             self.login_erep(erep_email_id, erep_pass, False)
             self.get_friends_data(id_info.profile_id)
             self.logout_erep()
-        else:
-            self.get_friends_data(data_rows[0]["data"].user_erep_profile_id)
-
+        # else:
+        #    self.get_friends_data(data_rows[0]["data"].user_erep_profile_id)
 
 
     ## XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
@@ -645,7 +716,7 @@ class ErepFriends(object):
 
 
     def ___set_graphic_interface(self):
-        """ Construct GUI widgets for ErepFriends app
+        """ Construct GUI widgets for Controls app
         """
         # Window widgets
         self.win_emsg = tk.Tk()     # "root"
@@ -750,13 +821,6 @@ class ErepFriends(object):
                        command=self.save_list_file).grid(row=2, column=1)
         else:
             self.win_save.deiconify()
-
-    def exit_emsg(self):
-        """ Quit the friends app """
-        if self.erep_csrf_token is not None:
-            self.disconnect()
-        self.win_ef.quit()
-        self.LOG.close_logs()
 
     def clear_list(self):
         """
@@ -988,11 +1052,3 @@ class ErepFriends(object):
         self.msg_body = tk.Text(msg_frame, height=23, width=44, wrap=tk.WORD, yscrollcommand=scroll_msg.set)
         self.msg_body.grid(row=3, column=0, sticky=tk.W)
         scroll_msg.config(command=self.msg_body.yview)
-
-#======================
-# Main
-#======================
-# If launched from command line...
-if __name__ == "__main__":
-    EF = ErepFriends()
-#    EF.win_ef.mainloop()

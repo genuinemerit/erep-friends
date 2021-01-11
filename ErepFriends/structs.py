@@ -6,9 +6,6 @@ Global constants and data structures.
 
 Module:  structs
 Class:   Structs
-Sub-classes:
-    UserRecord
-    FriendsRecord
 Author:    PQ <pq_rfw @ pm.me>
 """
 from dataclasses import dataclass
@@ -19,15 +16,9 @@ from typing import Literal, NamedTuple
 class Structs(object):
     """Codes, constants, types, structures.
 
-    @class: Structs
-
-    - Standard reference codes and constants:
-      - Severity levels
-      - Hash lengths and codes
-      - Default time zone
-      - Values for tabs and newlines
-    - Standard types
-    - Standard structures
+    - Reference codes and constants
+    - Non-standard datatypes
+    - Data structures
     """
 
     def __init__(self):
@@ -37,35 +28,17 @@ class Structs(object):
                 {'data': self.UserFields(), 'audit': self.AuditFields()},
             'friends':
                 {'data': self.FriendsFields(), 'audit': self.AuditFields()}}
-        self.FIELDS = {
-            'config': [col_nm for col_nm in self.ConfigFields.__dict__
-                       if not callable(getattr(self.ConfigFields, col_nm))
-                       and col_nm[:2] != "__"],
-            'audit': [col_nm for col_nm in self.AuditFields.__dict__
-                      if not callable(getattr(self.AuditFields, col_nm))
-                      and col_nm[:2] != "__"],
-            'user': [col_nm for col_nm in self.UserFields.__dict__
-                     if not callable(getattr(self.UserFields, col_nm))
-                     and col_nm[:2] != "__"],
-            'friends': [col_nm for col_nm in self.FriendsFields.__dict__
-                        if not callable(getattr(self.FriendsFields, col_nm))
-                        and col_nm[:2] != "__"],
-            'loglevel': [col_nm for col_nm in self.LogLevel.__dict__
-                         if not callable(getattr(self.LogLevel, col_nm))
-                         and col_nm[:2] != "__"],
-            'hashlevel': [col_nm for col_nm in self.HashLevel.__dict__
-                          if not callable(getattr(self.HashLevel, col_nm))
-                          and col_nm[:2] != "__"]
-        }
+
+# TYPES
 
     class Types(object):
         """Define non-standard data types."""
 
         t_dbaction = Literal['add', 'upd', 'del']
         t_tblnames = Literal['user', 'friends']
-        t_ffilters = Literal['uid', 'name', 'profile_id', 'party_name',
-                             'militia_name', 'level', 'xp']
         t_namedtuple = NamedTuple
+
+# CONSTANTS
 
     @dataclass
     class TimeZone:
@@ -76,7 +49,7 @@ class Structs(object):
 
     @dataclass
     class TextHelp:
-        """Define some useful constants for displaying text."""
+        """Define useful constants for displaying text."""
 
         LF: str = '\n'
         LF_TAB: str = '\n\t'
@@ -98,6 +71,9 @@ class Structs(object):
         DEBUG: int = 10
         NOTSET: int = 0
 
+        def keys():
+            return list(Structs.LogLevel.__dataclass_fields__.keys())
+
     @dataclass
     class HashLevel:
         """Define valid hashing levels."""
@@ -107,25 +83,68 @@ class Structs(object):
         SHA224: int = 56
         SHA1: int = 40
 
-    @dataclass
-    class ConfigFields:
-        """Define values used in configuration file."""
+        def keys():
+            return list(Structs.HashLevel.__dataclass_fields__.keys())
 
+# DATA STRUCTURES -- Configuration file
+
+    @dataclass
+    class GuiFields:
+        """Define GUI configuration items."""
+
+        w_app_ttl: str = 'eRepublik Friends Analysis'
+        w_cfg_ttl: str = 'eRepublik Friends Configuration'
+        w_m_file: str = 'File'
+        w_m_save: str = 'Save'
+        w_m_close: str = 'Close'
+        w_m_quit: str = 'Exit'
+        w_m_win: str = 'Windows'
+        w_m_cfg: str = 'Configure'
+        w_m_help: str = 'Help'
+        w_m_docs: str = 'User Guide'
+        w_m_about: str = 'About'
+
+        w_m_cfg_lbl: str = 'Enter configuration choices, then select File-->Save'
+        w_m_logs: str = 'Log location'
+        w_m_bkups: str = 'Backup DBs location'
+        w_m_email: str = 'eRep Email Login'
+        w_m_passw: str = 'eRep Password'
+
+        w_connected: str = 'Login to eRepublik verified'
+        w_login_failed: str = 'eRep login failed. Please review credentials'
+        w_greet: str = 'Welcome, [user]!'
+
+        def keys():
+            return list(Structs.GuiFields.__dataclass_fields__.keys())
+
+    @dataclass
+    class EnvFieldsReq:
+        """Define required environment configuration items."""
+
+        db_dir_path: str = './db'
         cfg_file_name: str = "efriends.conf"
         db_name: str = 'efriends.db'
-        data_path: str = './db'
+        erep_url: str = 'https://www.erepublik.com/en'
+        log_name: str = 'efriends.log'
         bkup_db_path: str = None
         arcv_db_path: str = None
         log_path: str = None
         log_level: str = 'INFO'
-        log_name: str = 'efriends.log'
-        erep_url: str = 'https://www.erepublik.com/en'
-        w_txt_title: str = "eRepublik Friends Analysis"
-        w_txt_greet: str = "Welcome, [user]!"
-        w_txt_connected: str = "You are now logged in to eRepublik"
-        w_txt_disconnected: str = "You are now logged out of eRepublik"
-        w_txt_login_failed: str =\
-            "eRep login failed. Please check credentials"
+
+        def keys():
+            return list(Structs.EnvFieldsReq.__dataclass_fields__.keys())
+
+    @dataclass
+    class EnvFieldsOpt:
+        """Define optional environment configuration items."""
+
+        log_path: str = None
+        bkup_path: str = None
+
+        def keys():
+            return list(Structs.EnvFieldsOpt.__dataclass_fields__.keys())
+
+# DATA STRUCTURES -- Database tables
 
     @dataclass
     class AuditFields:
@@ -138,6 +157,9 @@ class Structs(object):
         delete_ts: str = None
         is_encrypted: str = None
 
+        def keys():
+            return list(Structs.AuditFields.__dataclass_fields__.keys())
+
     @dataclass
     class UserFields:
         """Define non-audit columns on user table."""
@@ -147,6 +169,9 @@ class Structs(object):
         user_erep_password: str = None
         encrypt_all: str = None
         encrypt_key: str = None
+
+        def keys():
+            return list(Structs.UserFields.__dataclass_fields__.keys())
 
     @dataclass
     class FriendsFields:
@@ -186,3 +211,6 @@ class Structs(object):
         newspaper_name: str = None
         newspaper_avatar_link: str = None
         newspaper_url: str = None
+
+        def keys():
+            return list(Structs.FriendsFields.__dataclass_fields__.keys())
