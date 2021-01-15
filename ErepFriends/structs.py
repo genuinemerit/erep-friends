@@ -54,6 +54,7 @@ class Structs(object):
         NOTSET: int = 0
 
         def keys():
+            """Get column names."""
             return list(Structs.LogLevel.__dataclass_fields__.keys())
 
     @dataclass
@@ -66,6 +67,7 @@ class Structs(object):
         SHA1: int = 40
 
         def keys():
+            """Get column names."""
             return list(Structs.HashLevel.__dataclass_fields__.keys())
 
 # DATA STRUCTURES -- Database tables
@@ -75,6 +77,7 @@ class Structs(object):
         """Define audit columns used on all tables."""
 
         uid: str = None
+        pid: str = None
         hash_id: str = None
         create_ts: str = None
         update_ts: str = None
@@ -82,6 +85,7 @@ class Structs(object):
         is_encrypted: str = None
 
         def keys():
+            """Get column names."""
             return list(Structs.AuditFields.__dataclass_fields__.keys())
 
     @dataclass
@@ -99,9 +103,9 @@ class Structs(object):
         main_db_path: str = None
         main_db: str = None
         bkup_db_path: str = None
-        bkup_path: str = None
+        bkup_db: str = None
         arcv_db_path: str = None
-        arcv_path: str = None
+        arcv_db: str = None
 
         w_app_ttl: str = 'eRepublik Friends Analysis'
         w_cfg_ttl: str = 'eRepublik Friends Configuration'
@@ -115,7 +119,8 @@ class Structs(object):
         w_m_docs: str = 'User Guide'
         w_m_about: str = 'About'
 
-        w_m_cfg_lbl: str = 'Enter configuration choices, then select File-->Save'
+        w_m_cfg_lbl: str = 'Enter configuration choices,' +\
+                           'then select File-->Save'
         w_m_logs: str = 'Log location'
         w_m_log_level: str = 'INFO'
         w_m_bkups: str = 'Backup DBs location'
@@ -131,6 +136,7 @@ class Structs(object):
         w_greet: str = 'Welcome, [user]!'
 
         def keys():
+            """Get column names."""
             return list(Structs.ConfigFields.__dataclass_fields__.keys())
 
     @dataclass
@@ -144,6 +150,7 @@ class Structs(object):
         encrypt_key: str = None
 
         def keys():
+            """Get column names."""
             return list(Structs.UserFields.__dataclass_fields__.keys())
 
     @dataclass
@@ -186,4 +193,5 @@ class Structs(object):
         newspaper_url: str = None
 
         def keys():
+            """Get column names."""
             return list(Structs.FriendsFields.__dataclass_fields__.keys())

@@ -14,12 +14,13 @@ Author:    PQ <pq_rfw @ pm.me>
 import json  # noqa: F401
 import sqlite3 as sq3
 from collections import namedtuple
+from copy import copy
 from os import path, remove
 from pathlib import Path
 from pprint import pprint as pp  # noqa: F401
+from typing import Literal
 
 from cipher import Cipher
-from typing import Literal
 from utils import Utils
 
 UT = Utils()
@@ -72,13 +73,16 @@ class Dbase(object):
                 pass
         self.dmain_conn = None
 
-    def connect_dmain(self):
+    def connect_dmain(self, p_main_db):
         """Open connection to main database at configured path.
 
         Create a db file if one does not already exist.
+
+        Args:
+            p_main_db (str): full path to main db file
         """
         self.disconnect_dmain()
-        self.dmain_conn = sq3.connect(self.ST.ConfigFields.main_db)
+        self.dmain_conn = sq3.connect(p_main_db)
 
     def get_data_keys(self, p_tbl_nm: Types.tblnames) -> list:
         """Get column names for selected DB table.
@@ -100,7 +104,7 @@ class Dbase(object):
         Raises:
             Fail if cursor connection has not been established.
         """
-        self.connect_dmain()
+        self.connect_dmain(self.ST.ConfigFields.main_db)
         cur = self.dmain_conn.cursor()
         for tbl_nm in ['config', 'user', 'friends']:
             sql = "SELECT name FROM sqlite_master " +\
@@ -128,34 +132,30 @@ class Dbase(object):
 
     def set_insert_sql(self,
                        p_tbl_nm: Types.tblnames,
-                       dat_col_nms: list,
-                       dat_col_vals: object,
-                       aud_col_nms: list,
-                       aud_col_vals: object) -> str:
+                       p_data_rec: list,
+                       p_audit_rec: list) -> str:
         """Format SQL for an INSERT.
 
         Args:
-            p_tbl_nm (Types.tblnames -> str): user, friends, config
-            dat_col_nms (list): of column names in the "data" class
-            dat_col_vals (object): "data" dataclass
-            aud_col_nms (list): of column names in the "audit" class
-            aud_col_vals (object): "audit" dataclass
+            p_tbl_nm (Types.tblnames -> str): user, friends, configs
+            data_rec (list): mirrors an "data" dataclass
+            audit_rec (list): mirrors the "audit" dataclass
 
         Returns:
             str: formatted SQL to execute
         """
-        sql_cols = ", ".join([*dat_col_nms, *aud_col_nms])
+        sql_cols = ", ".join([*p_data_rec.keys(),
+                              *self.ST.AuditFields.keys()])
         sql_vals = ""
-        for cnm in dat_col_nms:
-            val = getattr(dat_col_vals, cnm)
+        for cnm, val in p_data_rec.items():
             if cnm == "encrypt_key":
                 sql_vals += "?, "
             elif val is None:
                 sql_vals += "NULL, "
             else:
                 sql_vals += "'{}', ".format(val)
-        for cnm in aud_col_nms:
-            val = getattr(aud_col_vals, cnm)
+        for cnm in self.ST.AuditFields.keys():
+            val = p_audit_rec[cnm]
             if val is None:
                 sql_vals += "NULL, "
             else:
@@ -166,118 +166,177 @@ class Dbase(object):
         return(sql)
 
     def hash_and_encrypt(self,
-                         p_tbl_nm: Types.tblnames,
-                         p_dat_col_nms: list,
-                         p_dat_col_vals: object,
-                         p_aud_col_vals: object,
-                         p_encrypt_all: str,
+                         p_data_rec: dict,
+                         p_audit_rec: dict,
                          p_encrypt_key: str) -> tuple:
         """Hash and encrypt a data row as needed.
 
         Args:
-            p_tbl_nm (Types.tblnames -> str): user, friends, config
-            p_data (object): a "data" dataclass
-            p_uid (string, optional): Required for upd, del. Default is None.
-            p_encrypt (bool, optional): For friends only. If True, encrypt
-              "data" fields. user "data" always encrypted. Default is False.
+            p_data_rec (dict): mirrors "data" dataclass
+            p_audit_rec (dict): mirrors "audit" dataclass
+            p_encrypt_key (str): user's encryption key
 
         Returns:
             tuple of updated (dataclass("audit), dataclass("data"))
         """
-        dat_col_vals = p_dat_col_vals
-        aud_col_vals = p_aud_col_vals
+        # Store modified values
+        data_rec = p_data_rec
+        audit_rec = p_audit_rec
         hash_str = ""
-        hash_flds = (cnm for cnm in p_dat_col_nms if cnm != "encrypt_key")
-        for cnm in hash_flds:
-            val = str(getattr(dat_col_vals, cnm))
-            if val not in (None, "None", ""):            # then hash
+        for cnm, val in p_data_rec.items():
+            if cnm != "encrypt_key"\
+            and val not in (None, "None", ""):             # then hash
                 hash_str += val
-                if aud_col_vals.is_encrypted == "True":  # and encrypt
-                    encrypt_val = CI.encrypt(val, p_encrypt_key)
-                    setattr(dat_col_vals, cnm, encrypt_val)
-        aud_col_vals.hash_id = UT.get_hash(hash_str)
-        return(dat_col_vals, aud_col_vals)
+                if p_audit_rec["is_encrypted"] == "True":  # and encrypt
+                    data_rec[cnm] = CI.encrypt(val, p_encrypt_key)
+        audit_rec["hash_id"] = UT.get_hash(hash_str)
+        return(data_rec, audit_rec)
 
-    def insert_db(self,
+    def get_encrypt_key(self,
+                        p_tbl_nm: Types.tblnames,
+                        p_encrypt_all: bool = False) -> tuple:
+        """Get the encrypt key and encrypt-all setting.
+
+        Args:
+            p_tbl_nm (Types.tblnames): name of table being modified
+            p_encrypt_all (bool): selected setting. Use only if table
+                is user. Default is False.
+
+        Returns:
+            tuple: (str: encrypt_key, bool: encrypt_all)
+        """
+        encrypt_key = None
+        encrypt_all = False
+        if p_tbl_nm == "user":
+            encrypt_key = CI.set_key()
+            encrypt_all = p_encrypt_all
+        elif p_tbl_nm == "friends":
+            user_rec = self.query_user()
+            encrypt_key = user_rec["data"].encrypt_key
+            encrypt_all = user_rec["data"].encrypt_all
+        return(encrypt_key, encrypt_all)
+
+    def set_insert_data(self,
                   p_tbl_nm: Types.tblnames,
-                  p_data: object,
+                  p_data_rec: dict,
                   p_encrypt: bool) -> tuple:
-        """Insert one row to main database.
+        """Format one logically new row for main database.
 
         Args:
             p_tbl_nm (Types.tblnames -> str): user, friends, config
-            p_data (object): a "data" dataclass
+            p_data_rec (dict): mirrors a "data" dataclass
             p_encrypt (bool, optional): For friends table only. If True,
                 encrypt "data". user table always encrypted. Default is False.
 
         Returns:
-            tuple: (list(col_nms), dataclass("data"), str(sql))
+            tuple: (dict: data_rec, dict: audit_rec)
         """
-        aud_col_nms = self.ST.AuditFields.keys()
-        aud_col_vals = self.ST.AuditFields
-        dat_col_nms = self.get_data_keys(p_tbl_nm)
-        dat_col_vals = p_data
-        aud_col_vals.uid = UT.get_uid()
+        audit_rec = dict()
+        for cnm in self.ST.AuditFields.keys():
+            audit_rec[cnm] = copy(getattr(self.ST.AuditFields, cnm))
+        audit_rec["uid"] = UT.get_uid()
+        audit_rec["pid"] = UT.get_uid()
         dttm = UT.get_dttm('UTC')
-        aud_col_vals.create_ts = dttm.curr_utc
-        aud_col_vals.update_ts = dttm.curr_utc
-        aud_col_vals.delete_ts = None
-        encrypt_all = False
-        encrypt_key = None
-        if p_tbl_nm == "user":
-            dat_col_vals.encrypt_key = CI.set_key()
-            encrypt_key = dat_col_vals.encrypt_key
-            encrypt_all = dat_col_vals.encrypt_all
-        elif p_tbl_nm == "friends":
-            user_rec = self.query_user()
-            encrypt_key = user_rec[0]["data"].encrypt_key
-            encrypt_all = user_rec[0]["data"].encrypt_all
+        audit_rec["create_ts"] = dttm.curr_utc
+        audit_rec["update_ts"] = dttm.curr_utc
+        audit_rec["delete_ts"] = None
+
+        encrypt_all = p_data_rec["encrypt_all"]\
+                      if p_tbl_nm == 'user' else False
+        encrypt_key, encrypt_all = self.get_encrypt_key(p_tbl_nm, encrypt_all)
         if p_encrypt or encrypt_all in (True, "True"):
-            aud_col_vals.is_encrypted = "True"
-        dat_col_vals, aud_col_vals =\
-            self.hash_and_encrypt(p_tbl_nm,
-                                  dat_col_nms, dat_col_vals,
-                                  aud_col_vals,
-                                  encrypt_all, encrypt_key)
-        sql = self.set_insert_sql(p_tbl_nm,
-                                  dat_col_nms, dat_col_vals,
-                                  aud_col_nms, aud_col_vals)
-        return(dat_col_nms, dat_col_vals, sql)
+            audit_rec["is_encrypted"] = "True"
+        data_rec, audit_rec =\
+            self.hash_and_encrypt(p_data_rec, audit_rec, encrypt_key)
+        return(data_rec, audit_rec)
+
+    def set_upsert_data(self,
+                  p_tbl_nm: Types.tblnames,
+                  p_data: dict,
+                  p_pid: str,
+                  p_encrypt: bool) -> tuple:
+        """Format one logically updated row to main database.
+
+        Or do nothing if no value-changes are detected.
+
+        Args:
+            p_tbl_nm (Types.tblnames -> str): user, friends, config
+            p_data (dict): that mirrors a "data" dataclass
+            p_pid (str): Unique Identifier of record to be updated
+            p_encrypt (bool, optional): For friends table only. If True,
+                encrypt "data". user table always encrypted. Default is False.
+
+        Returns:
+            tuple: (dict: data_rec, dict: audit_rec)
+        """
+        if p_tbl_nm == 'config':
+            db_rec = self.query_config()
+        elif p_tbl_nm == 'user':
+            db_rec = self.query_user()
+        # else query friends for latest record with pid = p_pid
+        if not db_rec or db_rec["audit"].pid != p_pid:
+            msg = "Cannot upsert. Record not found or ID not matched."
+            raise Exception(ValueError, msg)
+
+        audit_rec = dict()
+        for cnm in self.ST.AuditFields.keys():
+            audit_rec[cnm] = copy(getattr(db_rec["audit"], cnm))
+        dttm = UT.get_dttm('UTC')
+        audit_rec['update_ts'] = dttm.curr_utc
+        audit_rec["uid"] = UT.get_uid()
+
+        encrypt_all = p_data["encrypt_all"] if p_tbl_nm == 'user' else False
+        encrypt_key, encrypt_all = self.get_encrypt_key(p_tbl_nm, encrypt_all)
+        if p_encrypt or encrypt_all in (True, "True"):
+            audit_rec["is_encrypted"] = "True"
+        data_rec, audit_rec =\
+            self.hash_and_encrypt(p_data, audit_rec, encrypt_key)
+        if db_rec["audit"].hash_id == audit_rec["hash_id"]:
+            print("No changes detected. Aborting update request")
+            return(False, None)
+        return(data_rec, audit_rec)
 
     def write_db(self,
                  p_db_action: Types.dbaction,
                  p_tbl_nm: Types.tblnames,
-                 p_data: object,
-                 p_uid: str = None,
+                 p_data: dict,
+                 p_pid: str = None,
                  p_encrypt: bool = False):
         """Write a record to the DB.
 
         Args:
             p_db_action (Types.dbaction -> str): add, upd, del
             p_tbl_nm (Types.tblnames -> str): user, friends, config
-            p_data (object): a "data" dataclass
-            p_uid (string, optional): Required for upd, del. Default is None.
+            p_data (dict): a dict that mirrors a "data" dataclass
+            p_pid (string, optional): Required for upd, del. Default is None.
             p_encrypt (bool, optional): For friends only. If True, encrypt
               "data" fields. user "data" always encrypted. Default is False.
         """
         if p_db_action == "add":
-            dat_col_nms, dat_col_vals, sql =\
-                self.insert_db(p_tbl_nm, p_data, p_encrypt)
-        self.connect_dmain()
-        cur = self.dmain_conn.cursor()
-        if "encrypt_key" in dat_col_nms:
-            try:
-                cur.execute(sql, [dat_col_vals.encrypt_key])
-                self.dmain_conn.commit()
-            except IOError:
-                print("SQL execution failed")
-        else:
-            try:
-                cur.execute(sql)
-                self.dmain_conn.commit()
-            except IOError:
-                print("SQL execution failed")
-        self.dmain_conn.close()
+            data_rec, audit_rec = self.set_insert_data(p_tbl_nm, p_data, p_encrypt)
+        elif p_db_action == "upd":
+            data_rec, audit_rec =\
+                self.set_upsert_data(p_tbl_nm, p_data, p_pid, p_encrypt)
+        sql = self.set_insert_sql(p_tbl_nm, data_rec, audit_rec)
+        encrypt_key = data_rec["encrypt_key"]\
+            if "encrypt_key" in data_rec.keys() else False
+
+        if sql:
+            self.connect_dmain(self.ST.ConfigFields.main_db)
+            cur = self.dmain_conn.cursor()
+            if encrypt_key:
+                try:
+                    cur.execute(sql, [encrypt_key])
+                    self.dmain_conn.commit()
+                except IOError:
+                    print("SQL execution failed")
+            else:
+                try:
+                    cur.execute(sql)
+                    self.dmain_conn.commit()
+                except IOError:
+                    print("SQL execution failed")
+            self.dmain_conn.close()
 
     def decrypt_query_result(self,
                              p_tbl_nm: Types.tblnames,
@@ -294,7 +353,7 @@ class Dbase(object):
         if p_tbl_nm == "user":
             encrypt_key = p_data_list["data"][0].encrypt_key
         else:
-            user_rec = CN.get_user_data()
+            user_rec = self.query_user()
             if not user_rec:
                 msg = "User record not found"
                 raise Exception(ValueError, msg)
@@ -377,11 +436,14 @@ class Dbase(object):
         sql = "SELECT {}, MAX(update_ts) FROM {} ".format(", ".join(col_nms),
                                                           "user")
         sql += "WHERE delete_ts IS NULL;"
-        self.connect_dmain()
+        cfgd = self.query_config()
+        self.connect_dmain(cfgd["data"].main_db)
         cur = self.dmain_conn.cursor()
         cur_result = cur.execute(sql).fetchall()
         user_rec = self.format_query_result("user", p_decrypt,
                                             col_nms, cur_result)
+
+        user_rec = user_rec[0] if len(user_rec) > 0 else user_rec
         return user_rec
 
     def query_config(self) -> list:
@@ -389,6 +451,8 @@ class Dbase(object):
 
         Always query for one record with max update_ts.
         We only support one active (non-deleted) config record.
+        On successful query, return result and also refresh
+          config data in Structs object.
 
         Returns:
             list: of dataclass objects containing query results  or  empty
@@ -397,39 +461,45 @@ class Dbase(object):
         sql = "SELECT {}, MAX(update_ts) FROM {} ".format(", ".join(col_nms),
                                                           "config")
         sql += "WHERE delete_ts IS NULL;"
-        self.connect_dmain()
+        self.connect_dmain(self.ST.ConfigFields.main_db)
         cur = self.dmain_conn.cursor()
         cur_result = cur.execute(sql).fetchall()
         config_rec = self.format_query_result("config", False,
                                               col_nms, cur_result)
+        if len(config_rec) > 0:
+            cfg_data = config_rec[0]["data"]
+            for cnm in self.ST.ConfigFields.keys():
+                setattr(self.ST.ConfigFields, cnm, getattr(cfg_data, cnm))
+        config_rec = config_rec[0] if len(config_rec) > 0 else config_rec
         return config_rec
-
-
-
-
-
 
     def config_bkup_db(self,
                        p_bkup_db_path: str,
-                       p_arcv_db_path: str):
+                       p_arcv_db_path: str) -> tuple:
         """Define DB configuration. Load values from parameters.
 
         Args:
             p_bkup_db_path (string): full parent path to backup db
             p_arcv_db_path (string): full parent path to archive db
+        Returns:
+            tuple: (str: full bkup db dir, str: full arcv db dir,
+                    str: full bkup db path, str: full arcv db path)
         """
-        self.opt.bkup_db_path =\
-            path.abspath(path.realpath(p_bkup_db_path))
-        if not Path(self.opt.bkup_db_path).exists():
-            msg = "{} could not be reached".format(self.opt.bkup_db_path)
+        # backup database
+        bkup_db_path = path.abspath(path.realpath(p_bkup_db_path))
+        if not Path(bkup_db_path).exists():
+            msg = p_bkup_db_path + " could not be reached"
             raise Exception(IOError, msg)
-        self.opt.bkup_db = path.join(self.opt.bkup_db_path, self.opt_db_name)
-        self.opt.arcv_db_path =\
-            path.abspath(path.realpath(p_arcv_db_path))
-        if not Path(self.opt.arcv_db_path).exists():
-            msg = "{} could not be reached".format(self.opt.arcv_db_path)
+        bkup_db = path.join(bkup_db_path,
+                            self.ST.ConfigFields.db_name)
+        # archive databases
+        arcv_db_path = path.abspath(path.realpath(p_arcv_db_path))
+        if not Path(arcv_db_path).exists():
+            msg = p_arcv_db_path + " could not be reached"
             raise Exception(IOError, msg)
-        self.opt.arcv_db = path.join(self.opt.arcv_db_path, self.opt_db_name)
+        arcv_db = path.join(arcv_db_path,
+                            self.ST.ConfigFields.db_name)
+        return(bkup_db_path, arcv_db_path, bkup_db, arcv_db)
 
     def disconnect_dbkup(self):
         """Drop connection to backup database at configured path."""
@@ -449,46 +519,58 @@ class Dbase(object):
                 pass
         self.darcv_conn = None
 
-    def connect_dbkup(self):
-        """Open connection to backup database at configured path."""
+    def connect_dbkup(self, p_bkup_db):
+        """Open connection to backup database at configured path.
+
+        Args:
+            p_bkup_db (str): full path to backup DB file
+        """
         self.disconnect_dbkup()
-        dbkup = self.set_dbkup_path()
-        self.dbkup_conn = sq3.connect(self.ST.CongigFields.bkup_db)
+        self.dbkup_conn = sq3.connect(p_bkup_db)
 
-    def connect_darcv(self):
-        """Open connection to archive database at configured path."""
+    def connect_darcv(self, p_arcv_db):
+        """Open connection to archive database at configured path.
+
+        Args:
+            p_arcv_db (str): full path to archive DB file
+        """
         self.disconnect_darcv()
-        darcv = self.set_darcv_path()
-        self.darcv_conn = sq3.connect(self.ST.CongigFields.arcv_db)
-
+        self.darcv_conn = sq3.connect(p_arcv_db)
 
     def backup_db(self):
         """Make full backup of the main database to the backup db.
 
-        Create backup database file if it does not exist.
+        Creates a backup database file if it does not exist, else
+          overwrites it.
         """
-        if self.opt.bkup_db_path in (None, 'None', ""):
-            pass
-        else:
-            self.connect_dmain()
-            self.connect_dbkup()
+        cfgd = self.query_config()
+        if cfgd["data"].bkup_db\
+        and cfgd["data"].bkup_db not in (None, 'None'):
+            self.connect_dmain(cfgd["data"].main_db)
+            self.connect_dbkup(cfgd["data"].bkup_db)
             self.dmain_conn.backup(self.dbkup_conn, pages=0, progress=None)
             self.disconnect_dmain()
             self.disconnect_dbkup()
 
     def archive_db(self):
-        """Make full backup of main database before purging it.
+        """Make full backup of main database witha timestamp.
 
-        Distinct from regular backup file, a time-stamped, one-time copy.
+        Distinct from regular backup file. A time-stamped, one-time copy.
+        Use this to make a point-in-time copy or prior to doing a purge.
         """
-        if self.opt.arcv_db_path in (None, 'None', ""):
-            pass
-        else:
-            self.connect_dmain()
-            self.connect_darcv()
+        cfgd = self.query_config()
+        if cfgd["data"].arcv_db\
+        and cfgd["data"].arcv_db not in (None, 'None'):
+            dttm = UT.get_dttm('UTC')
+            arcv_db = cfgd["data"].arcv_db + dttm.curr_ts
+            self.connect_dmain(cfgd["data"].main_db)
+            self.connect_darcv(arcv_db)
             self.dmain_conn.backup(self.darcv_conn, pages=0, progress=None)
             self.disconnect_dmain()
             self.disconnect_darcv()
+
+
+
 
     def destroy_db(self, db_path: str) -> bool:
         """Delete the specified database file.
@@ -520,15 +602,15 @@ class Dbase(object):
             raise Exception(IOError, msg)
         return False
 
-    def purge_rows(self, p_uids: list, cur: object):
+    def purge_rows(self, p_pids: list, cur: object):
         """Physically delete a row from friends table on main db.
 
         Args:
-            p_uids (list): (uids, delete_ts) tuples associated
+            p_pids (list): (uids, delete_ts) tuples associated
                 with rows to physically delete
             cur (object): a cursor on the main database
         """
-        for row in p_uids:
+        for row in p_pids:
             d_uid = row[0]
             d_delete_ts = row[1]
             sql = "DELETE friends WHERE uid = '{}' ".format(d_uid)
@@ -546,13 +628,13 @@ class Dbase(object):
         sql += "WHERE delete_ts < '{}' ".format(dttm.curr_utc)
         sql += "AND delete_ts IS NOT NULL;"
 
-        self.connect_dmain()
+        cfgd = self.query_config()
+        self.connect_dmain(cfgd["data"].main_db)
         cur = self.dmain_conn.cursor()
         uid_list = [row for row in cur.execute(sql)]
         self.purge_rows(cur, uid_list)
         self.dmain_conn.commit()
         self.disconnect_dmain()
-
 
 
 
@@ -631,7 +713,8 @@ class Dbase(object):
         sql = "SELECT {}, MAX(update_ts) FROM {} ".format(", ".join(col_nms),
                                                           "friends")
         sql = self.query_friends_more(sql)
-        self.connect_dmain()
+        cfgd = self.query_config()
+        self.connect_dmain(cfgd["data"].main_db)
         cur = self.dmain_conn.cursor()
         cur_result = cur.execute(sql).fetchall()
         user_rec = self.format_query_result("friends", p_decrypt,

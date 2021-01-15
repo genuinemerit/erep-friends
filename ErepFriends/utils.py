@@ -189,3 +189,13 @@ class Utils(object):
         p_uid_length = 32 if p_uid_length < 32 else p_uid_length
         uid_val = secrets.token_urlsafe(p_uid_length)
         return uid_val
+
+    def get_home(self) -> str:
+        """Get name of the user's home directory
+
+        Returns:
+            str: path to $HOME
+        """
+        result = self.run_cmd("echo $HOME")
+        home = (result[1].decode('utf8')).strip()
+        return home

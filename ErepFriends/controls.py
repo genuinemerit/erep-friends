@@ -15,6 +15,7 @@ import sys
 import time
 import tkinter as tk
 from collections import namedtuple
+from copy import copy
 from os import listdir, mkdir, path
 from pathlib import Path
 from pprint import pprint as pp  # noqa: F401
@@ -63,7 +64,10 @@ class Controls(object):
         DB.config_main_db()
         if not Path(ST.ConfigFields.main_db).exists():
             DB.create_tables()
-            DB.write_db('add', 'config', ST.ConfigFields)
+            cfg_rec = dict()
+            for cnm in ST.ConfigFields.keys():
+                cfg_rec[cnm] = copy(getattr(ST.ConfigFields, cnm))
+            DB.write_db('add', 'config', cfg_rec)
         return ST
 
     def get_config_data(self):
@@ -77,7 +81,7 @@ class Controls(object):
         if len(data_rows) < 1:
             return False
         else:
-            return data_rows[0]
+            return data_rows
 
     def get_user_data(self):
         """Query data base for most current user record, decrypted
@@ -90,7 +94,87 @@ class Controls(object):
         if len(data_rows) < 1:
             return False
         else:
-            return data_rows[0]
+            return data_rows
+
+    def enable_logging(self):
+        """Assign log file location. Instantiate Logger object."""
+
+        cfg_rec = self.get_config_data()
+        self.logme = False\
+            if cfg_rec["data"].log_level == ST.LogLevel.NOTSET\
+            else True
+        log_file = path.join(cfg_rec["data"].log_path,
+                             cfg_rec["data"].log_name)
+        self.LOG = Logger(log_file, cfg_rec["data"].log_level)
+        self.LOG.set_log()
+        if self.logme:
+            msg = "Log file location: {}".format(log_file)
+            self.LOG.write_log(ST.LogLevel.INFO, msg)
+            msg = "Log level: {}".format(cfg_rec["data"].log_level)
+            self.LOG.write_log(ST.LogLevel.INFO, msg)
+
+    def configure_log(self,
+                      p_log_path: str,
+                      p_log_level: str):
+        """Update configs and options with path to log file and log level.
+
+        Args:
+            p_log_path (string) path to parent dir of log file
+            p_log_level (string) valid key to ST.LogLevel
+        """
+        self.logme = False
+        if p_log_path and p_log_path not in (None, "None"):
+            log_path = path.abspath(path.realpath(p_log_path))
+            if not Path(log_path).exists():
+                msg = "Log file path does not exist." +\
+                    "\nUser must create directory or pick a valid one."
+                raise Exception(IOError, msg)
+            log_level = p_log_level
+            if log_level not in ST.LogLevel.keys():
+                msg = "Log level must be one of: " + str(ST.LogLevel.keys)
+                raise Exception(ValueError, msg)
+            cfgr = self.get_config_data()
+            if not cfgr:
+                msg = "System not initialized properly. " +\
+                    "Delete DB file and restart."
+                raise Exception(ValueError, msg)
+            mod_rec = dict()
+            for cnm in ST.ConfigFields.keys():
+                mod_rec[cnm] = copy(getattr(cfgr["data"], cnm))
+                mod_rec["log_path"] = log_path
+                mod_rec["log_level"] = log_level
+            DB.write_db('upd', 'config', mod_rec, cfgr["audit"].pid)
+            cfgr = DB.query_config()
+            if cfgr["data"].log_path\
+            and cfgr["data"].log_path not in (None, "None"):
+                self.enable_logging()
+
+    def configure_backups(self,
+                          p_bkup_db_path: str,
+                          p_arcv_db_path: str):
+        """Set location of backup and archive databases. Initialize them.
+
+        Args:
+            p_bkup_db_path (string) path to parent dir of db backup file
+            p_arcv_db_path (string) path to parent dir of db archive files
+        """
+        bkup_db_path, arcv_db_path, bkup_db, arcv_db =\
+            DB.config_bkup_db(p_bkup_db_path, p_arcv_db_path)
+        cfgr = self.get_config_data()
+        if not cfgr:
+            msg = "System not initialized properly. " +\
+                  "Delete DB file and restart."
+            raise Exception(ValueError, msg)
+        cfg_rec = dict()
+        for cnm in ST.ConfigFields.keys():
+            cfg_rec[cnm] = copy(getattr(cfgr["data"], cnm))
+        cfg_rec["bkup_db_path"] = bkup_db_path
+        cfg_rec["bkup_db"] = bkup_db
+        cfg_rec["arcv_db_path"] = arcv_db_path
+        cfg_rec["arcv_db"] = arcv_db
+        DB.write_db('upd', 'config', cfg_rec, cfgr["audit"].pid)
+        DB.backup_db()
+        DB.archive_db()
 
     def logout_erep(self):
         """Logout from eRepublik.
@@ -106,13 +190,13 @@ class Controls(object):
                                            data=formdata,
                                            allow_redirects=True)
             if self.logme:
-                msg = "logout status code: {}".format(response.status_code)
+                msg = "Logout status code: {}".format(response.status_code)
                 self.LOG.write_log(ST.LogLevel.INFO, msg)
             if response.status_code == 302:
                 self.erep_csrf_token = None
                 response = self.erep_rqst.get(self.opt.erep_url)
                 if self.logme:
-                    msg = "logout response/redirect text: {}".format(response.text)
+                    msg = "Logout response/redirect text: " + response.text
                     self.LOG.write_log(ST.LogLevel.INFO, msg)
 
     def close_controls(self):
@@ -124,56 +208,12 @@ class Controls(object):
         except Exception:
             pass
 
-    def configure_log(self, log_path, log_level) -> str:
-        """Update configs and options with path to log file and log level.
-
-        Args:
-            log_path (string) path to parent dir of log file
-            log_level (string) key to ST.LogLevel
-
-        """
-        self.logme = False
-        # Verify values
-        if log_path in (None, "None", "") or not Path(log_path).exists():
-            msg = "Log file path does not exist." +\
-                  "\nUser must create directory or pick a valid one."
-            raise Exception(IOError, msg)
-        if log_level not in ST.LogLevel.keys():
-            msg = "Log level must be one of: {}".format(str(ST.LogLevel.keys))
-            raise Exception(ValueError, msg)
-        # Update configs
-        with open(self.cfg_file_path, "r") as cfgf:
-            c_data = cfgf.read()
-        cfgf.close()
-        c_data_p = c_data.split("log_path = ")
-        c_data_pp = c_data_p.split("\n")
-        c_data = c_data_p[0] + "'{}'".format(log_path) + c_data_pp[1]
-        c_data_p = c_data.split("log_level = ")
-        c_data_pp = c_data_p.split("\n")
-        c_data = c_data_p[0] + "'{}'".format(log_path) + c_data_pp[1]
-        with open(self.cfg_file_path, "w") as cfgf:
-            cfgf.write(c_data)
-        cfgf.close()
-        self.set_options(self.cfg_file_path)
 
 # #######################################################
 
 
 
-    def enable_logging(self):
-        """Assign log file location. Instantiate Logger object."""
 
-        self.logme = False if self.opt.log_level == ST.LogLevel.NOTSET\
-                            else True
-
-        log_file = path.join(self.opt.log_path, self.opt.log_name)
-        self.LOG = Logger(log_file, self.opt.log_level)
-        self.LOG.set_log()
-        if self.logme:
-            msg = "Log file location: {}".format(log_file)
-            self.LOG.write_log(ST.LogLevel.INFO, msg)
-            msg = "Log level: {}".format(self.opt.log_level)
-            self.LOG.write_log(ST.LogLevel.INFO, msg)
 
     def set_backup_db_path(self) -> str:
         """Set path to backup database.
@@ -395,7 +435,8 @@ class Controls(object):
             with open(profile_file, "w") as f:
                 f.write(str(response.text))            # save a copy
 
-        f_rec = ST.ControlsFields
+        f_rec = ST.FriendsFields
+        # Set this up as a dict instead, using FriendsFields as the defaults
         f_rec.profile_id = profile_id
         f_rec.name = profile_data["citizen"]["name"]
         f_rec.is_alive = profile_data["citizen"]["is_alive"]
@@ -539,8 +580,12 @@ class Controls(object):
 
         for friend in friends_data:
             print("Getting profile for {} ... ".format(friend["name"]))
-            f_rec = self.get_user_profile(friend["id"])
-            DB.write_db("add", "friends", f_rec, None, False)
+            # eventually, this will be modified to return a dict:s
+            frec = self.get_user_profile(friend["id"])
+            friends_rec = dict()
+            for cnm in ST.FriendsRec.keys():
+                friends_rec[cnm] = copy(getattr(frec, cnm))
+            DB.write_db("add", "friends", friends_rec, None, False)
             time.sleep(.300)
 
     def set_environment(self):
@@ -551,17 +596,22 @@ class Controls(object):
         self.enable_logging()
 
         data_rows = DB.query_user(p_decrypt=True)
-        if len(data_rows) < 1:
+        if not data_rows:
             id_info, erep_email_id, erep_pass = self.interactive_login_erep()
             self.logout_erep()
-            u_row = ST.UserFields
-            u_row.user_erep_profile_id = id_info.profile_id
-            u_row.user_erep_email = erep_email_id
-            u_row.user_erep_password = erep_pass
-            u_row.encrypt_all = 'False'
-            DB.write_db("add", "user", u_row, None, True)
-            f_rec = self.get_user_profile(id_info.profile_id)
-            DB.write_db("add", "friends", f_rec, None, False)
+            urec = dict()
+            for cnm in ST.UserFields.keys():
+                urec[cnm] = copy(getattr(ST.UserFields, cnm))
+            urec["user_erep_profile_id"] = id_info.profile_id
+            urec["user_erep_email"] = erep_email_id
+            urec["user_erep_password"] = erep_pass
+            urec["encrypt_all"] = False
+            DB.write_db("add", "user", urec, None, True)
+            frec = self.get_user_profile(id_info.profile_id)
+            friend_rec = dict()
+            for cnm in ST.FriendsFields.keys():
+                friend_rec[cnm] = copy(getattr(frec, cnm))
+            DB.write_db("add", "friends", friend_rec, None, False)
             time.sleep(1)
             self.login_erep(erep_email_id, erep_pass, False)
             self.get_friends_data(id_info.profile_id)
@@ -607,8 +657,6 @@ class Controls(object):
 
         msg_response = self.erep_rqst.post(
             msg_url, data=send_message, headers=msg_headers, allow_redirects = False)
-        pp(msg_response.status_code)
-        pp(msg_response.text)
 
         self.status_text.config(text = "{}{}".format(self.opt.w_txt_sent_to, profile_data))
 

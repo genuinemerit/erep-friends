@@ -10,14 +10,15 @@ Author:    PQ <pq_rfw @ pm.me>
 """
 import tkinter as tk
 from dataclasses import dataclass
+from os import path
 from pprint import pprint as pp  # noqa: F401
 from tkinter import filedialog, messagebox, ttk
 
 from controls import Controls
-from structs import Structs
+from utils import Utils
 
-ST = Structs()
 CN = Controls()
+UT = Utils()
 
 
 class Views(object):
@@ -31,9 +32,14 @@ class Views(object):
         # Basic environment set-up
         CN.check_python_version()
         CN.set_erep_headers()
-        ST = CN.configure_database()
-        cfg_data = CN.get_config_data()
-        self.cfgr = cfg_data["data"]
+        self.ST = CN.configure_database()
+        self.cfgr = CN.get_config_data()
+        if not self.cfgr:
+            msg = "Configuration data not set up properly." +\
+                  " Delete db file and restart."
+            raise Exception(ValueError, msg)
+        else:
+            self.cfgr = self.cfgr["data"]
         self.user = CN.get_user_data()
 
         # Initial GUI set-up
@@ -77,7 +83,7 @@ class Views(object):
         """Used for item separators in menus."""   # noqa: D401
         return True
 
-    def exit_app(self):
+    def exit_appl(self):
         """Quit the app."""
         CN.close_controls()
         self.win_root.quit()
@@ -130,44 +136,31 @@ class Views(object):
 
         For values left empty on the form, do nothing.
         """
-        pp(("self.buffer.current_frame", self.buffer.current_frame))
-
         if self.buffer.current_frame == "config":
-            log_loc = str(self.log_loc.get()).strip()
-            if log_loc is not None and log_loc != "":
-                print("DEBUG: Saving log location: {}".format(log_loc))
-
-            log_level = str(self.log_lvl_val.get()).strip()
-            print("DEBUG: Saving log level key: {}".format(log_level))
-
-            bkup_loc = str(self.bkup_loc.get()).strip()
-            if bkup_loc is not None and bkup_loc != "":
-                print("DEBUG: Saving backup location: {}".format(bkup_loc))
-
-            email = str(self.email.get()).strip()
-            if email is not None and email != "":
-                print("DEBUG: Saving email {}".format(email))
-
-            passw = str(self.passw.get()).strip()
-            if passw is not None and passw != "":
-                print("DEBUG: Saving passw {}".format(passw))
+            CN.configure_log(str(self.log_loc.get()).strip(),
+                             str(self.log_lvl_val.get()).strip())
+            CN.configure_backups(str(self.bkup_loc.get()).strip(),
+                                 str(self.bkup_loc.get()).strip())
+            erep_email = str(self.email.get()).strip()
+            erep_passw = str(self.passw.get()).strip()
+            # configure user login
 
     def select_log_dir(self):
         """Browse for a log directory."""
-        dirname = tk.filedialog.askdirectory(initialdir="/db",
+        dirname = tk.filedialog.askdirectory(initialdir=UT.get_home(),
                                              title=self.cfgr.w_b_set_log_path)
         self.log_loc.insert(0, dirname)
 
     def select_bkup_dir(self):
         """Browse for a backup directory."""
-        dirname = tk.filedialog.askdirectory(initialdir="/db",
+        dirname = tk.filedialog.askdirectory(initialdir=UT.get_home(),
                                              title=self.cfgr.w_b_set_dbkup_path)
         self.bkup_loc.insert(0, dirname)
 
     def browse_file(self):
         """Browse for a selected file."""
         ftypes = (("Text files", "*.txt*"), ("all files", "*.*"))
-        _ = tk.filedialog.askopenfilename(initialdir="/",
+        _ = tk.filedialog.askopenfilename(initialdir=UT.get_home(),
                                           title=self.cfgr.w_b_pick_file,
                                           filetypes=ftypes)
     # Constructors
@@ -210,7 +203,7 @@ class Views(object):
                                           command=self.select_log_dir)
             self.log_loc_btn.grid(row=1, column=2, sticky=tk.W)
 
-            levels = [lvl for lvl in ST.LogLevel.keys()]
+            levels = [lvl for lvl in self.ST.LogLevel.keys()]
             self.log_lvl_val = tk.StringVar(self.cfg_frame)
             self.log_lvl_val.set(levels[5])   # INFO
             self.log_level = tk.OptionMenu(self.cfg_frame,
@@ -245,7 +238,7 @@ class Views(object):
         self.file_menu.add_command(label=self.cfgr.w_m_close,
                                    command=self.close_frame, state="disabled")
         self.file_menu.add_command(label=self.cfgr.w_m_quit,
-                                   command=self.exit_app)
+                                   command=self.exit_appl)
 
         self.win_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label=self.cfgr.w_m_win, menu=self.win_menu)
