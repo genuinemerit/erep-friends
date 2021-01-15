@@ -28,50 +28,13 @@ from logger import Logger
 from structs import Structs
 from utils import Utils
 
-ST = Structs()
 UT = Utils()
+ST = Structs()
+DB = Dbase(ST)
 
 
 class Controls(object):
     """Rules engine for eRepublik."""
-
-    def __init__(self):
-        """Initialize Controls object.
-
-        The basic_interface widgets are just enough to complete the
-        environment set-up. The system uses Tkinter.
-        Will work on replacing it with Gtk.
-
-        Once set_environment is done, there will be proper config files,
-        a main database file, a log file (if desired), backup and archive
-        database files (if desired), a working connection to eRepublik,
-        and the databse will be populated with user and user's friend-list
-        citizen profile data.
-
-        self.set_environment()
-
-        # This is in-memory text and scrub
-        # Maybe want to separate this from pure GUI logic
-        self.id_list = None
-        self.status_text = None
-        self.citizen_id = None
-        self.citizen_name = None
-        self.citizen_ix = None
-        self.id_list_file_entry = None
-        self.id_file_list = None
-        self.valid_list = None
-        # This is message data:
-        self.subject = None
-        self.msg_body = None
-
-        # This is sort of IO/database/filtering stuff
-        # Can replace files with views? Dynamically?
-        self.listdir_files = None
-        self.current_file_name = 'profile_ids'
-
-        # Construct and launch the GUI
-        self.___set_graphic_interface()
-        """
 
     def check_python_version(self):
         """Validate Python version."""
@@ -92,51 +55,42 @@ class Controls(object):
             'Connection': 'keep-alive',
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/31.0.1650.63 Chrome/31.0.1650.63 Safari/537.36'}  # noqa: E501
 
-    def set_main_data_paths(self):
-        """Make sure data directory exists."""
-        self.db_dir_path =\
-            path.abspath(path.realpath(ST.EnvFieldsReq.db_dir_path))
-        self.cfg_file_path =\
-            path.join(self.db_dir_path, ST.EnvFieldsReq.cfg_file_name)
-        if not Path(self.db_dir_path).exists():
-            mkdir(self.db_dir_path)
+    def configure_database(self):
+        """Instantiate Dbase object.
 
-    def set_config_file(self, p_db_dir_path: str,
-                           p_cfg_file_path: str):
-        """Define, create initial version of config file.
-
-        Args:
-            p_db_dir_path (string): parent path to main DB
-            p_cfg_file_path (string): full path to config file
+        Create main DB file and tables if needed.
         """
+        DB.config_main_db()
+        if not Path(ST.ConfigFields.main_db).exists():
+            DB.create_tables()
+            DB.write_db('add', 'config', ST.ConfigFields)
+        return ST
 
-        if not Path(p_cfg_file_path).exists():
-            cfg_txt = "#views\n"
-            for c_nm in ST.GuiFields.keys():
-                c_val = getattr(ST.GuiFields, c_nm)
-                cfg_txt += "{} = '{}'\n".format(cfg_nm, cfg_val)
-            cfg_txt += "#environment - required\n"
-            for c_nm in ST.EnvFieldsReq.keys():
-                c_val = getattr(ST.EnvFieldsReq, c_nm)
-                cfg_val = p_db_dir_path if cfg_nm == 'db_dir_path' else cfg_val
-                cfg_txt += "{} = '{}'\n".format(cfg_nm, cfg_val)
-            with open(p_cfg_file_path, 'w') as cfgf:
-                cfgf.write(cfg_txt)
-            cfgf.close()
+    def get_config_data(self):
+        """Query data base for most current config record
 
-    def set_required_options(self, p_cfg_file_path: str):
-        """Load settings from config file.
-
-        Args:
-            p_cfg_file_path (string): full path to config file
+        Returns:
+            object  or  bool: False if no result,
+                              else dict of "data" and "audit" dataclasses
         """
-        self.opt = None
-        for opt_nm in ST.GuiFields.keys():
-            define(opt_nm)
-        for opt_nm in ST.EnvFieldsReq.keys():
-            define(opt_nm)
-        options.parse_config_file(p_cfg_file_path)
-        self.opt = options
+        data_rows = DB.query_config()
+        if len(data_rows) < 1:
+            return False
+        else:
+            return data_rows[0]
+
+    def get_user_data(self):
+        """Query data base for most current user record, decrypted
+
+        Returns:
+            object  or  bool: False if no result,
+                              else dict of "data" and "audit" dataclasses
+        """
+        data_rows = DB.query_user(p_decrypt=True)
+        if len(data_rows) < 1:
+            return False
+        else:
+            return data_rows[0]
 
     def logout_erep(self):
         """Logout from eRepublik.
@@ -170,74 +124,56 @@ class Controls(object):
         except Exception:
             pass
 
+    def configure_log(self, log_path, log_level) -> str:
+        """Update configs and options with path to log file and log level.
+
+        Args:
+            log_path (string) path to parent dir of log file
+            log_level (string) key to ST.LogLevel
+
+        """
+        self.logme = False
+        # Verify values
+        if log_path in (None, "None", "") or not Path(log_path).exists():
+            msg = "Log file path does not exist." +\
+                  "\nUser must create directory or pick a valid one."
+            raise Exception(IOError, msg)
+        if log_level not in ST.LogLevel.keys():
+            msg = "Log level must be one of: {}".format(str(ST.LogLevel.keys))
+            raise Exception(ValueError, msg)
+        # Update configs
+        with open(self.cfg_file_path, "r") as cfgf:
+            c_data = cfgf.read()
+        cfgf.close()
+        c_data_p = c_data.split("log_path = ")
+        c_data_pp = c_data_p.split("\n")
+        c_data = c_data_p[0] + "'{}'".format(log_path) + c_data_pp[1]
+        c_data_p = c_data.split("log_level = ")
+        c_data_pp = c_data_p.split("\n")
+        c_data = c_data_p[0] + "'{}'".format(log_path) + c_data_pp[1]
+        with open(self.cfg_file_path, "w") as cfgf:
+            cfgf.write(c_data)
+        cfgf.close()
+        self.set_options(self.cfg_file_path)
 
 # #######################################################
 
 
-    def set_config_file_more(self,
-                           p_cfg_file_path: str,
-                           p_db_dir_path: str,
-                           p_bkup_db_path: str,
-                           p_arcv_db_path: str,
-                           parse_text_path: str,):
-        """Define and create config file.
-
-        Args:
-            p_cfg_file_path (string): full path to config file
-            p_db_dir_path (string): parent path to main DB
-            p_bkup_db_path (string): parent path to backup DB
-            p_arcv_db_path (string): parent path to archive DB
-            parse_text_path (string): parent path to log file
-        """
-        cfg_txt = ""
-        for cfg_nm in ST.FIELDS["config"]:
-            cfg_val = getattr(ST.ConfigFields, cfg_nm)
-            cfg_val = p_db_dir_path if cfg_nm == 'db_dir_path' else cfg_val
-            cfg_val = p_bkup_db_path if cfg_nm == 'bkup_db_path' else cfg_val
-            cfg_val = p_arcv_db_path if cfg_nm == 'arcv_db_path' else cfg_val
-            cfg_val = parse_text_path if cfg_nm == 'log_path' else cfg_val
-            cfg_txt += "{} = '{}'\n".format(cfg_nm, cfg_val)
-        with open(p_cfg_file_path, 'w') as cfgf:
-            cfgf.write(cfg_txt)
-        cfgf.close()
-
-    def set_options(self, p_cfg_file_path: str):
-        """Load settings from config file.
-
-        Args:
-            p_cfg_file_path (string): full path to config file
-        """
-        self.opt = None
-        for opt_nm in ST.FIELDS["config"]:
-            define(opt_nm)
-        options.parse_config_file(p_cfg_file_path)
-        self.opt = options
-
-    def configure_database(self):
-        """Instantiate Dbase object. Create databases."""
-        self.DB = Dbase()
-        self.DB.config_db(self.opt.db_name, self.opt.db_dir_path,
-                          self.opt.bkup_db_path, self.opt.arcv_db_path)
-        main_db_file =\
-            path.join(self.opt.db_dir_path, self.opt.db_name)
-        if not Path(main_db_file).exists():
-            self.DB.create_db()
 
     def enable_logging(self):
         """Assign log file location. Instantiate Logger object."""
-        self.logme = False
-        if self.opt.log_path not in (None, "None", ""):
-            self.logme = False if self.opt.log_level == ST.LogLevel.NOTSET\
-                               else True
-            log_file =\
-                path.join(self.opt.log_path, self.opt.log_name)
-            self.LOG = Logger(log_file, self.opt.log_level)
-            self.LOG.set_log()
-            if self.logme:
-                msg = "Log file location: {}".format(log_file)
-                self.LOG.write_log(ST.LogLevel.INFO, msg)
-                msg = "Log level: {}".format(self.opt.log_level)
-                self.LOG.write_log(ST.LogLevel.INFO, msg)
+
+        self.logme = False if self.opt.log_level == ST.LogLevel.NOTSET\
+                            else True
+
+        log_file = path.join(self.opt.log_path, self.opt.log_name)
+        self.LOG = Logger(log_file, self.opt.log_level)
+        self.LOG.set_log()
+        if self.logme:
+            msg = "Log file location: {}".format(log_file)
+            self.LOG.write_log(ST.LogLevel.INFO, msg)
+            msg = "Log level: {}".format(self.opt.log_level)
+            self.LOG.write_log(ST.LogLevel.INFO, msg)
 
     def set_backup_db_path(self) -> str:
         """Set path to backup database.
@@ -283,28 +219,6 @@ class Controls(object):
                 mkdir(db_path)
         return db_path
 
-    def set_log_file_path(self) -> str:
-        """Set path to log file.
-
-        No rolling log mechanism in place yet.
-        Manually backup or delete logs if desired.
-        As long as log file path and name are defined,
-            system creates a new log file if needed.
-        @DEV
-            Replace CLI input with a GUI
-
-        Returns:
-            string: full parent path to log file or 'None'
-        """
-        log_path = ST.ConfigFields.log_path
-        while log_path in (None, "None", ""):
-            print("\nEnter location for Log file or 'n':")
-            log_path = input()
-        if log_path[:1].lower() != 'n':
-            log_path = path.abspath(path.realpath(log_path))
-            if not Path(log_path).exists():
-                mkdir(log_path)
-        return log_path
 
 
     def get_local_login_file(self):
@@ -626,7 +540,7 @@ class Controls(object):
         for friend in friends_data:
             print("Getting profile for {} ... ".format(friend["name"]))
             f_rec = self.get_user_profile(friend["id"])
-            self.DB.write_db("add", "friends", f_rec, None, False)
+            DB.write_db("add", "friends", f_rec, None, False)
             time.sleep(.300)
 
     def set_environment(self):
@@ -634,22 +548,9 @@ class Controls(object):
 
         Complete necessary set-up steps before proceeding
         """
-        self.check_python_version()
-        self.set_main_data_paths()
-        self.set_erep_headers()
-
-        if not Path(cfg_file_path).exists():
-            bkup_db_path = self.set_backup_db_path()
-            arcv_db_path = self.set_archive_db_path()
-            log_path = self.set_log_file_path()
-            self.set_config_file(cfg_file_path, db_dir_path,
-                                    bkup_db_path, arcv_db_path,
-                                    log_path)
-        self.set_options(cfg_file_path)
-        self.configure_database()
         self.enable_logging()
 
-        data_rows = self.DB.query_user(p_decrypt=True)
+        data_rows = DB.query_user(p_decrypt=True)
         if len(data_rows) < 1:
             id_info, erep_email_id, erep_pass = self.interactive_login_erep()
             self.logout_erep()
@@ -658,9 +559,9 @@ class Controls(object):
             u_row.user_erep_email = erep_email_id
             u_row.user_erep_password = erep_pass
             u_row.encrypt_all = 'False'
-            self.DB.write_db("add", "user", u_row, None, True)
+            DB.write_db("add", "user", u_row, None, True)
             f_rec = self.get_user_profile(id_info.profile_id)
-            self.DB.write_db("add", "friends", f_rec, None, False)
+            DB.write_db("add", "friends", f_rec, None, False)
             time.sleep(1)
             self.login_erep(erep_email_id, erep_pass, False)
             self.get_friends_data(id_info.profile_id)

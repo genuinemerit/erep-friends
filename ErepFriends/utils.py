@@ -27,7 +27,7 @@ class Utils(object):
     """Generic functions for common tasks."""
 
     @classmethod
-    def get_dttm(cls, p_tzone: str) -> ST.Types.t_namedtuple:
+    def get_dttm(cls, p_tzone: str) -> namedtuple:
         """Get date and time values.
 
         Args:

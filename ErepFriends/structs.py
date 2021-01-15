@@ -10,7 +10,6 @@ Author:    PQ <pq_rfw @ pm.me>
 """
 from dataclasses import dataclass
 from pprint import pprint as pp  # noqa: F401
-from typing import Literal, NamedTuple
 
 
 class Structs(object):
@@ -20,23 +19,6 @@ class Structs(object):
     - Non-standard datatypes
     - Data structures
     """
-
-    def __init__(self):
-        """Initialize the object."""
-        self.DBSCHEMA = {
-            'user':
-                {'data': self.UserFields(), 'audit': self.AuditFields()},
-            'friends':
-                {'data': self.FriendsFields(), 'audit': self.AuditFields()}}
-
-# TYPES
-
-    class Types(object):
-        """Define non-standard data types."""
-
-        t_dbaction = Literal['add', 'upd', 'del']
-        t_tblnames = Literal['user', 'friends']
-        t_namedtuple = NamedTuple
 
 # CONSTANTS
 
@@ -86,64 +68,6 @@ class Structs(object):
         def keys():
             return list(Structs.HashLevel.__dataclass_fields__.keys())
 
-# DATA STRUCTURES -- Configuration file
-
-    @dataclass
-    class GuiFields:
-        """Define GUI configuration items."""
-
-        w_app_ttl: str = 'eRepublik Friends Analysis'
-        w_cfg_ttl: str = 'eRepublik Friends Configuration'
-        w_m_file: str = 'File'
-        w_m_save: str = 'Save'
-        w_m_close: str = 'Close'
-        w_m_quit: str = 'Exit'
-        w_m_win: str = 'Windows'
-        w_m_cfg: str = 'Configure'
-        w_m_help: str = 'Help'
-        w_m_docs: str = 'User Guide'
-        w_m_about: str = 'About'
-
-        w_m_cfg_lbl: str = 'Enter configuration choices, then select File-->Save'
-        w_m_logs: str = 'Log location'
-        w_m_bkups: str = 'Backup DBs location'
-        w_m_email: str = 'eRep Email Login'
-        w_m_passw: str = 'eRep Password'
-
-        w_connected: str = 'Login to eRepublik verified'
-        w_login_failed: str = 'eRep login failed. Please review credentials'
-        w_greet: str = 'Welcome, [user]!'
-
-        def keys():
-            return list(Structs.GuiFields.__dataclass_fields__.keys())
-
-    @dataclass
-    class EnvFieldsReq:
-        """Define required environment configuration items."""
-
-        db_dir_path: str = './db'
-        cfg_file_name: str = "efriends.conf"
-        db_name: str = 'efriends.db'
-        erep_url: str = 'https://www.erepublik.com/en'
-        log_name: str = 'efriends.log'
-        bkup_db_path: str = None
-        arcv_db_path: str = None
-        log_path: str = None
-        log_level: str = 'INFO'
-
-        def keys():
-            return list(Structs.EnvFieldsReq.__dataclass_fields__.keys())
-
-    @dataclass
-    class EnvFieldsOpt:
-        """Define optional environment configuration items."""
-
-        log_path: str = None
-        bkup_path: str = None
-
-        def keys():
-            return list(Structs.EnvFieldsOpt.__dataclass_fields__.keys())
-
 # DATA STRUCTURES -- Database tables
 
     @dataclass
@@ -159,6 +83,55 @@ class Structs(object):
 
         def keys():
             return list(Structs.AuditFields.__dataclass_fields__.keys())
+
+    @dataclass
+    class ConfigFields:
+        """Define configuration items."""
+
+        erep_url: str = 'https://www.erepublik.com/en'
+
+        log_name: str = 'efriends.log'
+        log_path: str = None
+        log_level: str = None
+
+        db_dir_path: str = './db'
+        db_name: str = 'efriends.db'
+        main_db_path: str = None
+        main_db: str = None
+        bkup_db_path: str = None
+        bkup_path: str = None
+        arcv_db_path: str = None
+        arcv_path: str = None
+
+        w_app_ttl: str = 'eRepublik Friends Analysis'
+        w_cfg_ttl: str = 'eRepublik Friends Configuration'
+        w_m_file: str = 'File'
+        w_m_save: str = 'Save'
+        w_m_close: str = 'Close'
+        w_m_quit: str = 'Exit'
+        w_m_win: str = 'Windows'
+        w_m_cfg: str = 'Configure'
+        w_m_help: str = 'Help'
+        w_m_docs: str = 'User Guide'
+        w_m_about: str = 'About'
+
+        w_m_cfg_lbl: str = 'Enter configuration choices, then select File-->Save'
+        w_m_logs: str = 'Log location'
+        w_m_log_level: str = 'INFO'
+        w_m_bkups: str = 'Backup DBs location'
+        w_m_email: str = 'eRep Email Login'
+        w_m_passw: str = 'eRep Password'
+
+        w_b_pick_file: str = "Select a file"
+        w_b_set_log_path: str = "Set Log Path"
+        w_b_set_dbkup_path: str = "Set DB Backup Path"
+
+        w_connected: str = 'Login to eRepublik verified'
+        w_login_failed: str = 'eRep login failed. Please review credentials'
+        w_greet: str = 'Welcome, [user]!'
+
+        def keys():
+            return list(Structs.ConfigFields.__dataclass_fields__.keys())
 
     @dataclass
     class UserFields:
