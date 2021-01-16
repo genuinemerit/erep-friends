@@ -37,6 +37,15 @@ DB = Dbase(ST)
 class Controls(object):
     """Rules engine for eRepublik."""
 
+    def __init__(self):
+        """Initialize Controls() object.
+
+        @DEV - Need to work on getting Logging turned on
+               when log credentials have already been
+               established / are not changed.
+        """
+        self.logme = False
+
     def check_python_version(self):
         """Validate Python version."""
         if sys.version_info[:2] < (3, 6):
@@ -144,22 +153,20 @@ class Controls(object):
                 mod_rec["log_path"] = log_path
                 mod_rec["log_level"] = log_level
             DB.write_db('upd', 'config', mod_rec, cfgr["audit"].pid)
-            cfgr = DB.query_config()
+            cfgr = self.get_config_data()
             if cfgr["data"].log_path\
             and cfgr["data"].log_path not in (None, "None"):
                 self.enable_logging()
 
     def configure_backups(self,
-                          p_bkup_db_path: str,
-                          p_arcv_db_path: str):
+                          p_bkup_db_path: str):
         """Set location of backup and archive databases. Initialize them.
 
         Args:
-            p_bkup_db_path (string) path to parent dir of db backup file
-            p_arcv_db_path (string) path to parent dir of db archive files
+            p_bkup_db_path (string) path to parent dir of db backup files
         """
         bkup_db_path, arcv_db_path, bkup_db, arcv_db =\
-            DB.config_bkup_db(p_bkup_db_path, p_arcv_db_path)
+            DB.config_bkup_db(p_bkup_db_path)
         cfgr = self.get_config_data()
         if not cfgr:
             msg = "System not initialized properly. " +\
@@ -186,7 +193,7 @@ class Controls(object):
             formdata = {'_token': self.erep_csrf_token,
                         "remember": '1',
                         'commit': 'Logout'}
-            response = self.erep_rqst.post(self.opt.erep_url + "/logout",
+            response = self.erep_rqst.post(self.cfgd["data"].erep_url + "/logout",
                                            data=formdata,
                                            allow_redirects=True)
             if self.logme:
@@ -194,89 +201,10 @@ class Controls(object):
                 self.LOG.write_log(ST.LogLevel.INFO, msg)
             if response.status_code == 302:
                 self.erep_csrf_token = None
-                response = self.erep_rqst.get(self.opt.erep_url)
+                response = self.erep_rqst.get(self.cfgd["data"].erep_url)
                 if self.logme:
                     msg = "Logout response/redirect text: " + response.text
                     self.LOG.write_log(ST.LogLevel.INFO, msg)
-
-    def close_controls(self):
-        """Close connections. Close the log."""
-        if self.erep_csrf_token is not None:
-            self.logout_erep()
-        try:
-            self.LOG.close_logs()
-        except Exception:
-            pass
-
-
-# #######################################################
-
-
-
-
-
-    def set_backup_db_path(self) -> str:
-        """Set path to backup database.
-
-        No scheduled backups yet. Do backups on demand.
-        No rolling backups. A single backup db overwritten whenever
-         a backup is taken.
-        Suitable to use as recovery for main db by simply copying
-         the backup file to the main db location.
-        @DEV
-            Replace CLI input with a GUI
-
-        Returns:
-            string: full parent path to backup db or 'None'
-        """
-        db_path = ST.ConfigFields.bkup_db_path
-        while db_path in (None, "None", ""):
-            print("\nEnter backup location or 'n':")
-            db_path = input()
-        if db_path[:1].lower() != 'n':
-            db_path = path.abspath(path.realpath(db_path))
-            if not Path(db_path).exists():
-                mkdir(db_path)
-        return db_path
-
-    def set_archive_db_path(self) -> str:
-        """Set path to archive database.
-
-        This is where we take a db copy prior to running a purge.
-        @DEV
-            Replace CLI input with a GUI
-
-        Returns:
-            string: full parent path to archive db or 'None'
-        """
-        db_path = ST.ConfigFields.arcv_db_path
-        while db_path in (None, "None", ""):
-            print("\nEnter archive DB location or 'n':")
-            db_path = input()
-        if db_path[:1].lower() != 'n':
-            db_path = path.abspath(path.realpath(db_path))
-            if not Path(db_path).exists():
-                mkdir(db_path)
-        return db_path
-
-
-
-    def get_local_login_file(self):
-        """Use local copy of login response if available.
-
-        Returns:
-            text or bool: full response.text from eRep login GET  or  False
-        """
-        login_file = path.abspath(path.join(self.opt.log_path,
-                                            "login_response"))
-        response_text = False
-        if Path(login_file).exists():
-            with open(login_file) as lf:
-                response_text = lf.read()
-                lf.close()
-        return response_text
-
-
 
     def get_token(self, response_text: str):
         """Get/save CSRF token.
@@ -288,52 +216,6 @@ class Controls(object):
         parse_text = parse_text[1].split("';")
         self.erep_csrf_token = parse_text[0]
 
-    def login_erep(self, p_email: str, p_password: str,
-                   p_save_response: bool) -> str:
-        """Login to eRepublik to confirm credentials and get profile ID.
-
-        Args:
-            p_email (str): User login email address
-            p_password (str): User login password
-            p_save_response (bool): If True, store response text as a file
-
-        Returns:
-            text: full response.text from eRep login GET  or  None
-        """
-        formdata = {'citizen_email': p_email,
-                    'citizen_password': p_password,
-                    "remember": '1', 'commit': 'Login'}
-        response = self.erep_rqst.post(self.opt.erep_url + "/login",
-                                       data=formdata,
-                                       allow_redirects=False)
-        if self.logme:
-            msg = "login status code: {}".format(response.status_code)
-            self.LOG.write_log(ST.LogLevel.INFO, msg)
-        if p_save_response:
-            with open(path.abspath(path.join(self.opt.log_path,
-                                                "login_response")), "w") as f:
-                f.write(response.text)
-        if response.status_code == 302:
-            response = self.erep_rqst.get(self.opt.erep_url)
-            self.get_token(response.text)
-        else:
-            # Don't understand yet why sometimes I get a 200 response
-            #  when I'd been getting 302 for a while. The 200 response
-            #  basically means the login didn't work and it is still
-            #  sitting there on the login page.  The response is such
-            #  a jumble of javascript it is hard to see what is really
-            #  being presented. But there seems to be at least the
-            #  possibility that a captcha is being used sometimes.
-            # Maybe that is random. Or maybe if it has notice a lot
-            #  of activity from my IP recently that seems to indicate
-            #  a script is being used?  Seems like when I've seen this
-            #  before I just had to wait several hours and then it started
-            #  working OK again.
-            msg = "Login connection failed. See response text in log." +\
-                  "\n Probably a captcha. May want to wait a few hours."
-            raise Exception(ConnectionError, msg)
-        return response.text
-
     def get_user_info(self, response_text: str):
         """Extract ID and name from response text.
 
@@ -341,19 +223,8 @@ class Controls(object):
             response_text (string): full response text from eRep login GET
 
         Returns:
-            namedtuple: id_info.. profile_id, user_name
-
-        This shows up about line 41 of the response text:
-        {"citizenId":9194827,"isOrganization":0,"isAdult":true,"country":24,"citizenshipCountryId":24,"name":"RF Williams","avatar":"https://cdnt.erepublik.net/tSSiPU1zChZhwB6TromFPARPJrQ=/55x55/smart/avatars/Citizens/2017/05/04/0aff92a6d29c160c51d5843f6a445c01.png?fad2c777d8f3f833ce09201bd7f8bb2c"
-
-        This shows up in the login response text too, but much further down.
-        Since I'll grab this info and more from the profile later on, just go for the earlier
-        instance of ID and Name here.
-
-        citizenInfo: {"id":9194827,"name":"RF Williams","sex":"M","created_at":"2017-05-04 17:29:03","is_organization":0,"is_alive":1,"is_validated":1,"has_avatar":1,"parent_id":0,"is_payer":0,"has_jid":1,"avatar_version":"fad2c777d8f3f833ce09201bd7f8bb2c","avatar_file":"png","level":52,"avatar":"https://cdnt.erepublik.net/tSSiPU1zChZhwB6TromFPARPJrQ=/55x55/smart/avatars/Citizens/2017/05/04/0aff92a6d29c160c51d5843f6a445c01.png?fad2c777d8f3f833ce09201bd7f8bb2c","profile_url":"//m.erepublik.com/en/citizen/profile/9194827"},
+            namedtuple: (id_info: profile_id, user_name)
         """
-        # print("login response_text: {}".format(response_text))
-
         id_info = namedtuple("id_info", "profile_id user_name")
         # Get user profile ID.
         parse_text = response_text.split('"citizen":{"citizenId":')
@@ -363,46 +234,91 @@ class Controls(object):
         parse_text = response_text.split('"name":')
         parse_text = parse_text[1].split(",")
         id_info.user_name = parse_text[0].replace('"', '')
-
-        if self.logme and self.opt.log_level == 'DEBUG':
+        if self.logme and self.cfgd["data"].log_level == 'DEBUG':
             msg = "CSRF Token:\t{}".format(self.erep_csrf_token)
             self.LOG.write_log(ST.LogLevel.INFO, msg)
             msg = "Login response:\n{}".format(response_text)
             self.LOG.write_log(ST.LogLevel.INFO, msg)
         return id_info
 
-    def interactive_login_erep(self) -> tuple:
-        """Connect to eRepublik using valid email and password.
+    def get_local_login_file(self):
+        """Use local copy of login response if available.
 
         Returns:
-            tuple: (namedtuple: id_info, erep_mail_id, erep_pass)
+            text or bool: full response.text from eRep login GET  or  False
         """
-        if self.erep_csrf_token is not None:
-            msg = "Already logged in.\nRun logout method."
-            raise Exception(ConnectionError, msg)
-        else:
-            # Establish if user credentials work
-            # Replace with data from user record if it exists
-            print("\nEnter eRepublik Email Login ID and Password to enable"
-                  " gathering full friends list.")
-            print("Password won't display on the screen."
-                  " Both Email and Password are stored encrypted.")
-            erep_email_id = input("eRep Email Login ID: ")
-            erep_pass = getpass.getpass("eRep Password: ")
+        login_file = path.abspath(path.join(self.cfgd["data"].log_path,
+                                            "login_response"))
+        response_text = False
+        if Path(login_file).exists():
+            with open(login_file) as lf:
+                response_text = lf.read()
+                lf.close()
+        return response_text
+
+    def login_erep(self,
+                   p_email: str,
+                   p_password: str,
+                   p_use_response_file: bool) -> str:
+        """Login to eRepublik to confirm credentials and get profile ID.
+
+        Args:
+            p_email (str): User login email address
+            p_password (str): User login password
+            p_use_response_file (bool): If True, use response text file input
+              if it exists.  Write response text if connecting to erep.
+
+        Returns:
+            text: full response.text from eRep login GET  or  None
+        """
+        self.cfgd = self.get_config_data()
+        self.logout_erep()
+        time.sleep(.300)
+
+        response_text = False
+        if p_use_response_file:
             response_text = self.get_local_login_file()
             if response_text:
                 if self.logme:
                     msg = "Using cached login data for credentials"
                     self.LOG.write_log(ST.LogLevel.INFO, msg)
+        if not response_text:
+            formdata = {'citizen_email': p_email,
+                        'citizen_password': p_password,
+                        "remember": '1', 'commit': 'Login'}
+            login_url = self.cfgd["data"].erep_url + "/login"
+            response = self.erep_rqst.post(login_url,
+                                           data=formdata,
+                                           allow_redirects=False)
+            if self.logme:
+                msg = "Login status code: {}".format(response.status_code)
+                self.LOG.write_log(ST.LogLevel.INFO, msg)
+            if response.status_code == 302:
+                response = self.erep_rqst.get(self.cfgd["data"].erep_url)
+                self.get_token(response.text)
+                response_text = response.text
+                if p_use_response_file:
+                    with open(path.abspath(path.join(self.cfgd["data"].log_path,
+                              "login_response")), "w") as f:
+                        f.write(response.text)
             else:
-                response_text = self.login_erep(erep_email_id,
-                                                erep_pass, True)
-                if not response_text:
-                    if not response_text:
-                        msg = "Login failed.\nCheck credentials."
-                        raise Exception(ConnectionError, msg)
-            id_info = self.get_user_info(response_text)
-            return (id_info, erep_email_id, erep_pass)
+                msg = "Login connection failed. See response text in log." +\
+                    "\n Probably a captcha. May want to wait a few hours."
+                raise Exception(ConnectionError, msg)
+        id_info = self.get_user_info(response_text)
+        self.logout_erep()
+        return id_info
+
+    def close_controls(self):
+        """Close connections. Close the log."""
+        if self.erep_csrf_token is not None:
+            self.logout_erep()
+        try:
+            self.LOG.close_logs()
+        except Exception:
+            pass
+
+# #######################################################
 
     def get_user_profile(self, profile_id: str):
         """Retrieve profile for user from eRepublik.
@@ -420,12 +336,12 @@ class Controls(object):
             dataclass instance: ST.ControlsFields
         """
         file_nm = "profile_response_{}".format(profile_id)
-        profile_file = path.abspath(path.join(self.opt.log_path, file_nm))
+        profile_file = path.abspath(path.join(self.cfgd["data"].log_path, file_nm))
         if Path(profile_file).exists():
             with open(profile_file) as pf:
                 profile_data = json.loads(pf.read())        # convert to dict
         else:
-            profile_url = self.opt.erep_url +\
+            profile_url = self.cfgd["data"].erep_url +\
                 "/main/citizen-profile-json/" + profile_id
             response = requests.get(profile_url)       # returns JSON
             if response.status_code == 404:
@@ -482,7 +398,7 @@ class Controls(object):
                 "https:" + profile_data["partyData"]["avatar"]
             f_rec.party_orientation =\
                 profile_data["partyData"]["economical_orientation"]
-            f_rec.party_url = self.opt.erep_url + "/party/" +\
+            f_rec.party_url = self.cfgd["data"].erep_url + "/party/" +\
                 str(profile_data["partyData"]["stripped_title"]) + "-" +\
                 str(profile_data["partyData"]["id"]) + "/1"
 
@@ -493,7 +409,7 @@ class Controls(object):
                 str(profile_data['military']['militaryUnit']['name'])
             f_rec.military_rank =\
                 profile_data['military']['militaryUnit']["militaryRank"]
-            f_rec.militia_url = self.opt.erep_url +\
+            f_rec.militia_url = self.cfgd["data"].erep_url +\
                 "/military/military-unit/" +\
                 str(profile_data['military']['militaryUnit']['id']) +\
                 "/overview"
@@ -508,7 +424,7 @@ class Controls(object):
                 str(profile_data['newspaper']['name'])
             f_rec.newspaper_avatar_link =\
                 "https:" + profile_data['newspaper']["avatar"]
-            f_rec.newspaper_url = self.opt.erep_url + "/main/newspaper/" +\
+            f_rec.newspaper_url = self.cfgd["data"].erep_url + "/main/newspaper/" +\
                 str(profile_data['newspaper']["stripped_title"]) + "-" +\
                 str(profile_data['newspaper']["id"]) + "/1"
 
@@ -517,7 +433,7 @@ class Controls(object):
             val = str(getattr(f_rec, field)).replace("'", "_")
             setattr(f_rec, field, val)
 
-        if self.logme and self.opt.log_level == ST.LogLevel.DEBUG:
+        if self.logme and self.cfgd["data"].log_level == ST.LogLevel.DEBUG:
             msg = "user_profile: {}".format(profile_data)
             self.LOG.write_log(ST.LogLevel.DEBUG, msg)
         return f_rec
@@ -534,7 +450,7 @@ class Controls(object):
         Returns:
             response text
         """
-        msg_url = "{}/main/messages-compose/{}".format(self.opt.erep_url,
+        msg_url = "{}/main/messages-compose/{}".format(self.cfgd["data"].erep_url,
                                                        profile_id)
         msg_headers = {
             "Referer": msg_url,
@@ -550,7 +466,7 @@ class Controls(object):
         if self.logme:
             msg = "friends response code: {}".format(msg_response.status_code)
             self.LOG.write_log(ST.LogLevel.INFO, msg)
-        with open(path.abspath(path.join(self.opt.log_path,
+        with open(path.abspath(path.join(self.cfgd["data"].log_path,
                                          "friends_response")), "w") as f:
             f.write(msg_response.text)
         return msg_response.text
@@ -565,7 +481,7 @@ class Controls(object):
         Args:
             profile_id (str): citizen ID, etc.
         """
-        friends_file = path.abspath(path.join(self.opt.log_path,
+        friends_file = path.abspath(path.join(self.cfgd["data"].log_path,
                                               "friends_response"))
         if Path(friends_file).exists():
             with open(friends_file) as ff:
@@ -658,7 +574,7 @@ class Controls(object):
         msg_response = self.erep_rqst.post(
             msg_url, data=send_message, headers=msg_headers, allow_redirects = False)
 
-        self.status_text.config(text = "{}{}".format(self.opt.w_txt_sent_to, profile_data))
+        self.status_text.config(text = "{}{}".format(self.cfgd["data"].w_txt_sent_to, profile_data))
 
 
 
@@ -693,7 +609,7 @@ class Controls(object):
             id_list_data = f.read()
         self.clear_list()
         self.id_list.insert(tk.INSERT, id_list_data)
-        self.status_text.config(text = "{}{}".format(self.opt.w_txt_file_loaded, id_list))
+        self.status_text.config(text = "{}{}".format(self.cfgd["data"].w_txt_file_loaded, id_list))
         self.win_load.withdraw()
 
     def load_list_dialog(self):
@@ -703,19 +619,19 @@ class Controls(object):
         """
         if self.win_load is None:
             self.win_load = tk.Toplevel()
-            self.win_load.title(self.opt.w_cmd_save_list)
+            self.win_load.title(self.cfgd["data"].w_cmd_save_list)
             self.win_load.geometry('400x325+300+200')
             load_frame = ttk.Frame(self.win_load)
             load_frame.grid(row=4, column=2)
-            ttk.Label(load_frame, text=self.opt.w_cmd_load_list).grid(row=0, column=1)
-            ttk.Label(load_frame, text=self.opt.s_file_name).grid(row=1, column=1, sticky=tk.W)
+            ttk.Label(load_frame, text=self.cfgd["data"].w_cmd_load_list).grid(row=0, column=1)
+            ttk.Label(load_frame, text=self.cfgd["data"].s_file_name).grid(row=1, column=1, sticky=tk.W)
             # @DEV - Had trouble getting scroll bars to work as desired
             #   so omitting them for now
             self.id_file_list = tk.Listbox(load_frame, selectmode=tk.SINGLE, width=40)
             self.id_file_list.grid(row=2, column=1)
-            ttk.Button(load_frame, text=self.opt.s_cancel,
+            ttk.Button(load_frame, text=self.cfgd["data"].s_cancel,
                        command=self.win_load.withdraw).grid(row=4, column=1, sticky=tk.W)
-            ttk.Button(load_frame, text=self.opt.s_load,
+            ttk.Button(load_frame, text=self.cfgd["data"].s_load,
                        command=self.load_list_file).grid(row=4, column=1)
         else:
             self.win_load.deiconify()
@@ -755,18 +671,18 @@ class Controls(object):
         """
         if self.win_save is None:
             self.win_save = tk.Toplevel()
-            self.win_save.title(self.opt.w_cmd_save_list)
+            self.win_save.title(self.cfgd["data"].w_cmd_save_list)
             self.win_save.geometry('400x125+300+200')
             save_frame = ttk.Frame(self.win_save)
             save_frame.grid(row=3, column=2)
-            ttk.Label(save_frame, text=self.opt.s_file_name).grid(row=0, column=0, sticky=tk.W)
+            ttk.Label(save_frame, text=self.cfgd["data"].s_file_name).grid(row=0, column=0, sticky=tk.W)
             self.id_list_file_entry = ttk.Entry(save_frame, width=40)
             if self.current_file_name is not None:
                 self.id_list_file_entry.insert(tk.INSERT, self.current_file_name)
             self.id_list_file_entry.grid(row=0, column=1)
-            ttk.Button(save_frame, text=self.opt.s_cancel,
+            ttk.Button(save_frame, text=self.cfgd["data"].s_cancel,
                        command=self.win_save.withdraw).grid(row=2, column=1, sticky=tk.W)
-            ttk.Button(save_frame, text=self.opt.s_save,
+            ttk.Button(save_frame, text=self.cfgd["data"].s_save,
                        command=self.save_list_file).grid(row=2, column=1)
         else:
             self.win_save.deiconify()
@@ -776,7 +692,7 @@ class Controls(object):
         Wipe the ID list
         """
         self.id_list.delete(1.0, tk.END)
-        self.status_text.config(text = self.opt.w_cmd_make_list)
+        self.status_text.config(text = self.cfgd["data"].w_cmd_make_list)
 
     def clean_list(self):
         """
@@ -793,9 +709,9 @@ class Controls(object):
 
         # Reject if list is empty
         if len(list_data_str) < 1:
-            messagebox.showwarning(title = self.opt.m_warn_title,
-                                   message = self.opt.m_bad_list,
-                                   detail = "\n{}".format(self.opt.m_no_id_list))
+            messagebox.showwarning(title = self.cfgd["data"].m_warn_title,
+                                   message = self.cfgd["data"].m_bad_list,
+                                   detail = "\n{}".format(self.cfgd["data"].m_no_id_list))
             return False
         else:
             return list_data_str
@@ -806,7 +722,7 @@ class Controls(object):
         """
         self.valid_list = list()
         list_data_str = self.clean_list()
-        self.status_text.config(text=self.opt.m_verifying_ids)
+        self.status_text.config(text=self.cfgd["data"].m_verifying_ids)
         if list_data_str:
             # Verify that each ID has a valid profile on eRepublik
             list_data = list_data_str.splitlines()
@@ -814,13 +730,13 @@ class Controls(object):
                 if "\t" in profile_id:
                     profile_id = profile_id.split("\t")[0]
                 time.sleep(1)
-                profile_url = self.opt.erep_url + "/main/citizen-profile-json/" + profile_id
+                profile_url = self.cfgd["data"].erep_url + "/main/citizen-profile-json/" + profile_id
                 response = requests.get(profile_url)
                 # Reject list if it contains an invalid Profile ID
                 if response.status_code == 404:
-                    messagebox.showwarning(title = self.opt.m_warn_title,
-                            message = self.opt.m_bad_list,
-                            detail = "\n{}".format(self.opt.m_bad_id.replace("[citizen]", profile_id)))
+                    messagebox.showwarning(title = self.cfgd["data"].m_warn_title,
+                            message = self.cfgd["data"].m_bad_list,
+                            detail = "\n{}".format(self.cfgd["data"].m_bad_id.replace("[citizen]", profile_id)))
                     if self.logme:
                         self.LOG.write_log("WARN", "Invalid eRep Profile ID: {}".format(profile_id))
                     return False
@@ -829,7 +745,7 @@ class Controls(object):
                     citizen_profile = json.loads(response.text)
                     self.valid_list.append(profile_id + "\t{}".format(citizen_profile["citizen"]["name"]))
         # Refresh the ID list, showing citizen name along with each profile
-        self.status_text.config(text=self.opt.m_ids_verified)
+        self.status_text.config(text=self.cfgd["data"].m_ids_verified)
         self.id_list.delete(1.0, tk.END)
         self.id_list.insert(tk.INSERT, "\n".join(self.valid_list))
         return True
@@ -848,22 +764,22 @@ class Controls(object):
         bad_msg_txt = None
         # Subject (Entry object) empty
         if self.subject is None or len(self.subject.get()) == 0:
-            bad_msg_txt = "\n{}".format(self.opt.m_no_subject)
+            bad_msg_txt = "\n{}".format(self.cfgd["data"].m_no_subject)
         else:
             # Body (Text object) empty
             msg_body_len = len(self.msg_body.get(1.0, tk.END)) - 1
             if self.msg_body is None or msg_body_len < 1:
-                bad_msg_txt = "\n{}".format(self.opt.m_no_msg_body)
+                bad_msg_txt = "\n{}".format(self.cfgd["data"].m_no_msg_body)
             # Body too long
             elif msg_body_len > 2000:
-                bad_msg_txt = "\n{}\n{}{}".format(self.opt.m_msg_body_too_long,
-                                                self.opt.m_msg_body_current_len,
+                bad_msg_txt = "\n{}\n{}{}".format(self.cfgd["data"].m_msg_body_too_long,
+                                                self.cfgd["data"].m_msg_body_current_len,
                                                 str(msg_body_len))
         if bad_msg_txt is None:
             return True
         else:
-            messagebox.showwarning(title = self.opt.m_warn_title,
-                                   message = self.opt.m_bad_message,
+            messagebox.showwarning(title = self.cfgd["data"].m_warn_title,
+                                   message = self.cfgd["data"].m_bad_message,
                                    detail = bad_msg_txt)
             return False
 
@@ -876,10 +792,10 @@ class Controls(object):
         # Not connected to eRepublik
         if self.erep_csrf_token is None:
             bad_message = True
-            bad_msg_txt = "\n{}".format(self.opt.m_not_logged_in)
+            bad_msg_txt = "\n{}".format(self.cfgd["data"].m_not_logged_in)
         if bad_message:
-            messagebox.showwarning(title = self.opt.m_warn_title,
-                                   message = self.opt.m_bad_connect,
+            messagebox.showwarning(title = self.cfgd["data"].m_warn_title,
+                                   message = self.cfgd["data"].m_bad_connect,
                                    detail = bad_msg_txt)
             return False
         else:
@@ -906,7 +822,7 @@ class Controls(object):
             self.citizen_ix = 0 if self.citizen_ix is None else self.citizen_ix + 1
             if self.citizen_ix > len(self.valid_list) - 1:
                 self.status_text.config(text =\
-                    "{} {}".format(self.opt.w_txt_list_processed, self.opt.w_txt_reload))
+                    "{} {}".format(self.cfgd["data"].w_txt_list_processed, self.cfgd["data"].w_txt_reload))
             else:
                 profile_data = self.valid_list[self.citizen_ix]
                 self.send_message(profile_data)
@@ -921,13 +837,13 @@ class Controls(object):
                 self.send_message(profile_data)
                 time.sleep(1)
 
-            self.status_text.config(text = self.opt.w_txt_list_processed)
+            self.status_text.config(text = self.cfgd["data"].w_txt_list_processed)
 
     def make_root_emsg_window(self):
         """
         Construct the friends app window
         """
-        self.win_ef.title(self.opt.w_title)
+        self.win_ef.title(self.cfgd["data"].w_title)
         self.win_ef.geometry('900x600+100+100')
         self.win_ef.minsize(900,600)
 
@@ -938,34 +854,34 @@ class Controls(object):
         menu_bar = tk.Menu(self.win_emsg)
 
         file_menu = tk.Menu(menu_bar, tearoff=0)
-        menu_bar.add_cascade(label=self.opt.w_file_menu, menu=file_menu)
-        file_menu.add_command(label=self.opt.w_cmd_load_list, command=self.load_list_dialog)
-        file_menu.add_command(label=self.opt.w_cmd_save_list, command=self.save_list_dialog)
-        file_menu.add_command(label=self.opt.w_item_sep, command=self.do_nothing)
-        file_menu.add_command(label=self.opt.w_cmd_connect, command=self.connect)
-        file_menu.add_command(label=self.opt.w_cmd_disconnect, command=self.disconnect)
-        file_menu.add_command(label=self.opt.w_item_sep, command=self.do_nothing)
-        file_menu.add_command(label=self.opt.w_cmd_exit, command=self.exit_emsg)
+        menu_bar.add_cascade(label=self.cfgd["data"].w_file_menu, menu=file_menu)
+        file_menu.add_command(label=self.cfgd["data"].w_cmd_load_list, command=self.load_list_dialog)
+        file_menu.add_command(label=self.cfgd["data"].w_cmd_save_list, command=self.save_list_dialog)
+        file_menu.add_command(label=self.cfgd["data"].w_item_sep, command=self.do_nothing)
+        file_menu.add_command(label=self.cfgd["data"].w_cmd_connect, command=self.connect)
+        file_menu.add_command(label=self.cfgd["data"].w_cmd_disconnect, command=self.disconnect)
+        file_menu.add_command(label=self.cfgd["data"].w_item_sep, command=self.do_nothing)
+        file_menu.add_command(label=self.cfgd["data"].w_cmd_exit, command=self.exit_emsg)
 
         edit_menu = tk.Menu(menu_bar, tearoff=0)
-        menu_bar.add_cascade(label=self.opt.w_edit_menu, menu=edit_menu)
-        edit_menu.add_command(label=self.opt.w_cmd_clear_list, command=self.clear_list)
-        edit_menu.add_command(label=self.opt.w_cmd_verify_list, command=self.verify_list)
-        edit_menu.add_command(label=self.opt.w_item_sep, command=self.do_nothing)
-        edit_menu.add_command(label=self.opt.w_cmd_clear_msg, command=self.clear_message)
-        edit_menu.add_command(label=self.opt.w_cmd_verify_msg, command=self.verify_message)
+        menu_bar.add_cascade(label=self.cfgd["data"].w_edit_menu, menu=edit_menu)
+        edit_menu.add_command(label=self.cfgd["data"].w_cmd_clear_list, command=self.clear_list)
+        edit_menu.add_command(label=self.cfgd["data"].w_cmd_verify_list, command=self.verify_list)
+        edit_menu.add_command(label=self.cfgd["data"].w_item_sep, command=self.do_nothing)
+        edit_menu.add_command(label=self.cfgd["data"].w_cmd_clear_msg, command=self.clear_message)
+        edit_menu.add_command(label=self.cfgd["data"].w_cmd_verify_msg, command=self.verify_message)
 
         send_menu = tk.Menu(menu_bar, tearoff=0)
-        menu_bar.add_cascade(label=self.opt.w_send_menu, menu=send_menu)
-        send_menu.add_command(label=self.opt.w_cmd_send_to_next, command=self.send_message_to_next)
-        send_menu.add_command(label=self.opt.w_cmd_send_to_all, command=self.send_message_to_all)
+        menu_bar.add_cascade(label=self.cfgd["data"].w_send_menu, menu=send_menu)
+        send_menu.add_command(label=self.cfgd["data"].w_cmd_send_to_next, command=self.send_message_to_next)
+        send_menu.add_command(label=self.cfgd["data"].w_cmd_send_to_all, command=self.send_message_to_all)
         self.win_ef.config(menu=menu_bar)
 
     def make_status_widgets(self):
         """
         Construct the status message and avatar-display
         """
-        status_msg = self.opt.w_txt_greet.replace("[user]", self.user_name)
+        status_msg = self.cfgd["data"].w_txt_greet.replace("[user]", self.user_name)
         self.status_text = ttk.Label(self.win_emsg, text=status_msg)
         self.status_text.grid(column=0, row=0)
         tk_img = ImageTk.PhotoImage(self.user_avatar_file)
@@ -979,7 +895,7 @@ class Controls(object):
         """
         id_frame = ttk.Frame(self.win_emsg)
         id_frame.grid(row=4, column=0)
-        ttk.Label(id_frame, text=self.opt.t_id_list_title).pack(side="top")
+        ttk.Label(id_frame, text=self.cfgd["data"].t_id_list_title).pack(side="top")
         scroll_id = ttk.Scrollbar(id_frame)
         scroll_id.pack(side="right", fill="y", expand=False)
         self.id_list = tk.Text(id_frame, height=28, width=40, wrap=tk.WORD, yscrollcommand=scroll_id.set)
@@ -992,10 +908,10 @@ class Controls(object):
         """
         msg_frame = ttk.Frame(self.win_emsg)
         msg_frame.grid(row=4, column=1)
-        ttk.Label(msg_frame, text=self.opt.t_subject_title).grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(msg_frame, text=self.cfgd["data"].t_subject_title).grid(row=0, column=0, sticky=tk.W)
         self.subject = ttk.Entry(msg_frame, width=39)
         self.subject.grid(row=1, column=0)
-        ttk.Label(msg_frame, text=self.opt.t_body_title).grid(row=2, column=0, sticky=tk.W)
+        ttk.Label(msg_frame, text=self.cfgd["data"].t_body_title).grid(row=2, column=0, sticky=tk.W)
         scroll_msg = ttk.Scrollbar(msg_frame)
         scroll_msg.grid(row=3, column=1, sticky="N,S,W")
         self.msg_body = tk.Text(msg_frame, height=23, width=44, wrap=tk.WORD, yscrollcommand=scroll_msg.set)

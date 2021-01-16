@@ -122,7 +122,7 @@ class Dbase(object):
                         col_nms[ix] = col + " TEXT"
                     if col in ("create_ts", "hash_id"):
                         col_nms[ix] += " NOT NULL"
-                    if col == "uid":
+                    if col == "hash_id":
                         col_nms[ix] += " PRIMARY KEY"
                 sql = "CREATE TABLE {}({});".format(tbl_nm, ", ".join(col_nms))
                 cur.execute(sql)
@@ -183,6 +183,8 @@ class Dbase(object):
         data_rec = p_data_rec
         audit_rec = p_audit_rec
         hash_str = ""
+        # Double-check this logic to make sure it is working.
+        # I seem to be getting inserts even when all values are the same.
         for cnm, val in p_data_rec.items():
             if cnm != "encrypt_key"\
             and val not in (None, "None", ""):             # then hash
@@ -234,7 +236,6 @@ class Dbase(object):
         audit_rec = dict()
         for cnm in self.ST.AuditFields.keys():
             audit_rec[cnm] = copy(getattr(self.ST.AuditFields, cnm))
-        audit_rec["uid"] = UT.get_uid()
         audit_rec["pid"] = UT.get_uid()
         dttm = UT.get_dttm('UTC')
         audit_rec["create_ts"] = dttm.curr_utc
@@ -257,7 +258,14 @@ class Dbase(object):
                   p_encrypt: bool) -> tuple:
         """Format one logically updated row to main database.
 
-        Or do nothing if no value-changes are detected.
+        Do nothing if no value-changes are detected.
+
+        @DEV 1 - test the "no change" logic more carefully.
+         Either it is not noticing that there is no change or
+         different hashes are being generated for the same data.
+
+        @DEV 2 - start updating the delete_ts for obsoleted records.
+         This will be a physical UPDATE based on read by PK (hash_id)
 
         Args:
             p_tbl_nm (Types.tblnames -> str): user, friends, config
@@ -283,7 +291,6 @@ class Dbase(object):
             audit_rec[cnm] = copy(getattr(db_rec["audit"], cnm))
         dttm = UT.get_dttm('UTC')
         audit_rec['update_ts'] = dttm.curr_utc
-        audit_rec["uid"] = UT.get_uid()
 
         encrypt_all = p_data["encrypt_all"] if p_tbl_nm == 'user' else False
         encrypt_key, encrypt_all = self.get_encrypt_key(p_tbl_nm, encrypt_all)
@@ -291,9 +298,10 @@ class Dbase(object):
             audit_rec["is_encrypted"] = "True"
         data_rec, audit_rec =\
             self.hash_and_encrypt(p_data, audit_rec, encrypt_key)
+        # Double-check this logic to make sure it is working
+        # I seem to be getting inserts even when all values are the same.
         if db_rec["audit"].hash_id == audit_rec["hash_id"]:
-            print("No changes detected. Aborting update request")
-            return(False, None)
+            return(None, None)
         return(data_rec, audit_rec)
 
     def write_db(self,
@@ -317,26 +325,26 @@ class Dbase(object):
         elif p_db_action == "upd":
             data_rec, audit_rec =\
                 self.set_upsert_data(p_tbl_nm, p_data, p_pid, p_encrypt)
-        sql = self.set_insert_sql(p_tbl_nm, data_rec, audit_rec)
-        encrypt_key = data_rec["encrypt_key"]\
-            if "encrypt_key" in data_rec.keys() else False
-
-        if sql:
-            self.connect_dmain(self.ST.ConfigFields.main_db)
-            cur = self.dmain_conn.cursor()
-            if encrypt_key:
-                try:
-                    cur.execute(sql, [encrypt_key])
-                    self.dmain_conn.commit()
-                except IOError:
-                    print("SQL execution failed")
-            else:
-                try:
-                    cur.execute(sql)
-                    self.dmain_conn.commit()
-                except IOError:
-                    print("SQL execution failed")
-            self.dmain_conn.close()
+        if data_rec is not None and audit_rec is not None:
+            sql = self.set_insert_sql(p_tbl_nm, data_rec, audit_rec)
+            encrypt_key = data_rec["encrypt_key"]\
+                if "encrypt_key" in data_rec.keys() else False
+            if sql:
+                self.connect_dmain(self.ST.ConfigFields.main_db)
+                cur = self.dmain_conn.cursor()
+                if encrypt_key:
+                    try:
+                        cur.execute(sql, [encrypt_key])
+                        self.dmain_conn.commit()
+                    except IOError:
+                        self.dmain_conn.close()
+                else:
+                    try:
+                        cur.execute(sql)
+                        self.dmain_conn.commit()
+                    except IOError:
+                        self.dmain_conn.close()
+                self.dmain_conn.close()
 
     def decrypt_query_result(self,
                              p_tbl_nm: Types.tblnames,
@@ -474,13 +482,11 @@ class Dbase(object):
         return config_rec
 
     def config_bkup_db(self,
-                       p_bkup_db_path: str,
-                       p_arcv_db_path: str) -> tuple:
+                       p_bkup_db_path: str) -> tuple:
         """Define DB configuration. Load values from parameters.
 
         Args:
-            p_bkup_db_path (string): full parent path to backup db
-            p_arcv_db_path (string): full parent path to archive db
+            p_bkup_db_path (string): full parent path to backup dbs
         Returns:
             tuple: (str: full bkup db dir, str: full arcv db dir,
                     str: full bkup db path, str: full arcv db path)
@@ -493,10 +499,7 @@ class Dbase(object):
         bkup_db = path.join(bkup_db_path,
                             self.ST.ConfigFields.db_name)
         # archive databases
-        arcv_db_path = path.abspath(path.realpath(p_arcv_db_path))
-        if not Path(arcv_db_path).exists():
-            msg = p_arcv_db_path + " could not be reached"
-            raise Exception(IOError, msg)
+        arcv_db_path = bkup_db_path
         arcv_db = path.join(arcv_db_path,
                             self.ST.ConfigFields.db_name)
         return(bkup_db_path, arcv_db_path, bkup_db, arcv_db)
@@ -562,7 +565,7 @@ class Dbase(object):
         if cfgd["data"].arcv_db\
         and cfgd["data"].arcv_db not in (None, 'None'):
             dttm = UT.get_dttm('UTC')
-            arcv_db = cfgd["data"].arcv_db + dttm.curr_ts
+            arcv_db = cfgd["data"].arcv_db + "." + dttm.curr_ts
             self.connect_dmain(cfgd["data"].main_db)
             self.connect_darcv(arcv_db)
             self.dmain_conn.backup(self.darcv_conn, pages=0, progress=None)
@@ -606,14 +609,14 @@ class Dbase(object):
         """Physically delete a row from friends table on main db.
 
         Args:
-            p_pids (list): (uids, delete_ts) tuples associated
+            p_pids (list): (pids, delete_ts) tuples associated
                 with rows to physically delete
             cur (object): a cursor on the main database
         """
         for row in p_pids:
-            d_uid = row[0]
+            d_pid = row[0]
             d_delete_ts = row[1]
-            sql = "DELETE friends WHERE uid = '{}' ".format(d_uid)
+            sql = "DELETE friends WHERE uid = '{}' ".format(d_pid)
             sql += "AND delete_ts = '{}';".format(d_delete_ts)
             cur.execute(sql)
 
@@ -624,15 +627,15 @@ class Dbase(object):
         # Modify to use an appropriate purge threshold, not just
         # "deleted before today"
         dttm = UT.get_dttm()
-        sql = "SELECT uid, delete_ts FROM friends "
+        sql = "SELECT pid, delete_ts FROM friends "
         sql += "WHERE delete_ts < '{}' ".format(dttm.curr_utc)
         sql += "AND delete_ts IS NOT NULL;"
 
         cfgd = self.query_config()
         self.connect_dmain(cfgd["data"].main_db)
         cur = self.dmain_conn.cursor()
-        uid_list = [row for row in cur.execute(sql)]
-        self.purge_rows(cur, uid_list)
+        pid_list = [row for row in cur.execute(sql)]
+        self.purge_rows(cur, pid_list)
         self.dmain_conn.commit()
         self.disconnect_dmain()
 
