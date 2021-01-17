@@ -10,9 +10,8 @@ Author:    PQ <pq_rfw @ pm.me>
 """
 import tkinter as tk
 from dataclasses import dataclass
-from os import path
-from pprint import pprint as pp  # noqa: F401
-from tkinter import filedialog, messagebox, ttk
+from pprint import pprint as pp                  # noqa: F401
+from tkinter import filedialog, messagebox, ttk  # noqa: F401
 
 from controls import Controls
 from utils import Utils
@@ -29,7 +28,6 @@ class Views(object):
 
         Configure and start up the app.
         """
-        # Basic environment set-up
         CN.check_python_version()
         CN.set_erep_headers()
         self.ST = CN.configure_database()
@@ -40,15 +38,13 @@ class Views(object):
             raise Exception(ValueError, msg)
         else:
             self.cfgr = self.cfgr["data"]
-        self.user = CN.get_user_data() # from database
-        # Initial GUI set-up
+        self.user = CN.get_database_user_data()
         self.set_basic_interface()
-        # Show configuration frame if needed
         if not self.user\
-        or (self.cfgr.log_path is None
-            or self.cfgr.log_level is None
-            or self.cfgr.bkup_path is None):
-                self.make_configs_editor()
+            or (self.cfgr.log_path is None or
+                self.cfgr.log_level is None or
+                self.cfgr.bkup_path is None):
+            self.make_configs_editor()
         # Next:
         # Integrate results of config choices into flow
         # Some simple help instructions
@@ -166,13 +162,13 @@ class Views(object):
         """
         log_path = str(self.log_loc.get()).strip()
         log_level = str(self.log_lvl_val.get()).strip()
-        if (log_path and log_path != self.cfgr.log_path)\
-        or (log_level != self.cfgr.log_level):
+        if (log_path and log_path != self.cfgr.log_path) or\
+           (log_level != self.cfgr.log_level):
             CN.configure_log(log_path, log_level)
             return(self.cfgr.w_m_log_data,
                    self.cfgr.w_m_logging_on)
         else:
-            return("","")
+            return("", "")
 
     def save_bkup_path(self) -> tuple:
         """Handle updates to DB backup paths.
@@ -186,7 +182,7 @@ class Views(object):
             return(self.cfgr.w_m_bkup_data,
                    self.cfgr.w_m_bkups_on)
         else:
-            return("","")
+            return("", "")
 
     def save_user_data(self) -> tuple:
         """Handle updates to user credentials and basic info.
@@ -197,20 +193,22 @@ class Views(object):
         erep_email = str(self.email.get()).strip()
         erep_passw = str(self.passw.get()).strip()
         if erep_email and erep_passw:
-            # 1. Do a login to verify credentials and gather name
-                #a. This will be the same if done from Connect screen
+            # 1.a Do a login to verify credentials and gather name
+            # 1.b This will be the same if done from Connect screen
             id_info = CN.login_erep(erep_email, erep_passw, True)
-            # 2. If successful, save user record
+            # 2. If successful, get user profile data
+            profile_data = CN.get_citizen_profile(id_info.profile_id, True)
+            # 3. If successful, save user record and a friends record for user
             pp(id_info.profile_id)
             pp(id_info.user_name)
-            # 3. If successful, get user profile and save a friends record
-            # 4. Return feedback up the chain so a message can be displayed in GUI
+            pp(profile_data)
+            # 4. Return feedback for message to display in GUI
             return(self.cfgr.w_m_user,
                    self.cfgr.w_connected + "\n" +
                    self.cfgr.w_m_user_data + "\n" +
                    self.cfgr.w_greet.replace("[user]", id_info.user_name))
         else:
-            return("","")
+            return("", "")
 
     def save_data(self):
         """Write values to config file and/or database.
@@ -234,14 +232,16 @@ class Views(object):
 
     def select_log_dir(self):
         """Browse for a log directory."""
-        dirname = tk.filedialog.askdirectory(initialdir=UT.get_home(),
-                                             title=self.cfgr.w_b_set_log_path)
+        dirname =\
+            tk.filedialog.askdirectory(initialdir=UT.get_home(),
+                                       title=self.cfgr.w_b_set_log_path)
         self.log_loc.insert(0, dirname)
 
     def select_bkup_dir(self):
         """Browse for a backup directory."""
-        dirname = tk.filedialog.askdirectory(initialdir=UT.get_home(),
-                                             title=self.cfgr.w_b_set_dbkup_path)
+        dirname =\
+            tk.filedialog.askdirectory(initialdir=UT.get_home(),
+                                       title=self.cfgr.w_b_set_dbkup_path)
         self.bkup_loc.insert(0, dirname)
 
     def browse_file(self):
@@ -288,7 +288,7 @@ class Views(object):
                                     text=self.cfgr.w_m_creds)
             creds_label.grid(row=1, column=0, sticky=tk.E)
             profile_label = ttk.Label(self.connect_frame,
-                                     text=self.cfgr.w_m_profile)
+                                      text=self.cfgr.w_m_profile)
             profile_label.grid(row=2, column=0, sticky=tk.E)
 
         def set_inputs():
@@ -404,8 +404,8 @@ class Views(object):
             m_title = self.cfgr.w_m_warn_ttl
         else:
             m_title = self.cfgr.w_m_info_ttl
-        messagebox.showwarning(title = m_title, message = p_msg,
-                               detail = "\n{}".format(p_detail))
+        messagebox.showwarning(title=m_title, message=p_msg,
+                               detail="\n{}".format(p_detail))
 
     def make_menus(self):
         """Construct the app menus on the root window."""

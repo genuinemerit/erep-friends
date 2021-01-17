@@ -92,7 +92,7 @@ class Controls(object):
         else:
             return data_rows
 
-    def get_user_data(self):
+    def get_database_user_data(self):
         """Query data base for most current user record, decrypted
 
         Returns:
@@ -107,7 +107,6 @@ class Controls(object):
 
     def enable_logging(self):
         """Assign log file location. Instantiate Logger object."""
-
         cfg_rec = self.get_config_data()
         self.logme = False\
             if cfg_rec["data"].log_level == ST.LogLevel.NOTSET\
@@ -130,6 +129,9 @@ class Controls(object):
         Args:
             p_log_path (string) path to parent dir of log file
             p_log_level (string) valid key to ST.LogLevel
+
+        @DEV - either add a flag or (better) identify condition that
+               indicates logging has been configured and turned on or not
         """
         self.logme = False
         if p_log_path and p_log_path not in (None, "None"):
@@ -216,7 +218,7 @@ class Controls(object):
         parse_text = parse_text[1].split("';")
         self.erep_csrf_token = parse_text[0]
 
-    def get_user_info(self, response_text: str):
+    def get_basic_user_info(self, response_text: str):
         """Extract ID and name from response text.
 
         Args:
@@ -305,7 +307,7 @@ class Controls(object):
                 msg = "Login connection failed. See response text in log." +\
                     "\n Probably a captcha. May want to wait a few hours."
                 raise Exception(ConnectionError, msg)
-        id_info = self.get_user_info(response_text)
+        id_info = self.get_basic_user_info(response_text)
         self.logout_erep()
         return id_info
 
@@ -318,125 +320,235 @@ class Controls(object):
         except Exception:
             pass
 
-# #######################################################
-
-    def get_user_profile(self, profile_id: str):
-        """Retrieve profile for user from eRepublik.
-
-        Get the user's eRepublik profile ID from config file.
-        Set the user name and grab the user's avatar file.
+    def convert_val(self, p_erep_value) -> str:
+        """Convert eRep/JSON values to SQL- and Python-friendlier strings."
 
         Args:
-            profile_id (str): citizen ID
+            p_erep_value (any): true, false, "", [], numbers
+        """
+        val = p_erep_value
+        if p_erep_value == "true":
+            val = "True"
+        elif p_erep_value == "false":
+            val = "False"
+        elif isinstance(p_erep_value, int) or isinstance(p_erep_value, float):
+            val = str(p_erep_value)
+        elif p_erep_value in ("", [], {}, "[]", "{}"):
+            val = "None"
+        val = val.replace("'", "_")
+        return val
+
+    def get_basic_citizen_profile(self,
+                                  profile_data: dict,
+                                  p_frec: dict) -> dict:
+        """Extract basic citizen data from profile response.
+
+        Args:
+            profile_data (dict): returned from eRep
+            p_frec (dict): mirrors ST.FriendsFields
+
+        Returns:
+            dict: updated p_frec
+        """
+        frec = p_frec
+        frec["name"] = profile_data["citizen"]["name"]
+        frec["is_alive"] =\
+            self.convert_val(profile_data["citizen"]["is_alive"])
+        frec["is_adult"] = self.convert_val(profile_data["isAdult"])
+        frec["avatar_link"] = self.convert_val(profile_data["citizen"]["avatar"])
+        frec["level"] =\
+            self.convert_val(profile_data["citizen"]["level"])
+        frec["xp"] =\
+            self.convert_val(
+                profile_data["citizenAttributes"]["experience_points"])
+        frec["friends_count"] =\
+            self.convert_val(profile_data["friends"]["number"])
+        frec["achievements_count"] =\
+            self.convert_val(len(profile_data["achievements"]))
+        frec["is_in_congress"] =\
+            self.convert_val(profile_data['isCongressman'])
+        frec["is_ambassador"] = self.convert_val(profile_data['isAmbassador'])
+        frec["is_dictator"] = self.convert_val(profile_data['isDictator'])
+        frec["is_country_president"] =\
+            self.convert_val(profile_data['isPresident'])
+        frec["is_top_player"] = self.convert_val(profile_data['isTopPlayer'])
+        frec["is_party_member"] = self.convert_val(profile_data["isPartyMember"])
+        frec["is_party_president"] =\
+            self.convert_val(profile_data["isPartyPresident"])
+        return frec
+
+    def get_citizen_location_data(self,
+                                  profile_data: dict,
+                                  p_frec: dict) -> dict:
+        """Extract citizen location data from profile response.
+
+        Args:
+            profile_data (dict): returned from eRep
+            p_frec (dict): mirrors ST.FriendsFields
+
+        Returns:
+            dict: updated p_frec
+        """
+        frec = p_frec
+        frec["citizenship_country"] =\
+            self.convert_val(
+                profile_data["location"]["citizenshipCountry"]["name"])
+        if "city" in profile_data.keys():
+            frec["residence_city"] = self.convert_val(
+                profile_data["city"]["residenceCity"]["name"])
+            frec["residence_region"] = self.convert_val(
+                profile_data["city"]["residenceCity"]["region_name"])
+            frec["residence_country"] = self.convert_val(
+                profile_data["city"]["residenceCity"]["country_name"])
+        return frec
+
+    def get_citizen_party_data(self,
+                               profile_data: dict,
+                               p_frec: dict) -> dict:
+        """Extract citizen party data from profile response.
+
+        Args:
+            profile_data (dict): returned from eRep
+            p_frec (dict): mirrors ST.FriendsFields
+
+        Returns:
+            dict: updated p_frec
+        """
+        frec = p_frec
+        if "partyData" in profile_data.keys()\
+          and profile_data["partyData"] != []\
+          and not isinstance(profile_data["partyData"], bool)\
+          and not isinstance(profile_data["partyData"], str):
+            frec["party_name"] =\
+                self.convert_val(profile_data["partyData"]["name"])
+            frec["party_avatar_link"] = self.convert_val(
+                "https:" + profile_data["partyData"]["avatar"])
+            frec["party_orientation"] = self.convert_val(
+                profile_data["partyData"]["economical_orientation"])
+            frec["party_url"] = self.convert_val(
+                self.cfgd["data"].erep_url + "/party/" +\
+                str(profile_data["partyData"]["stripped_title"]) + "-" +\
+                str(profile_data["partyData"]["id"]) + "/1")
+        return frec
+
+    def get_citizen_military_data(self,
+                                  profile_data: dict,
+                                  p_frec: dict) -> dict:
+        """Extract citizen military data from profile response.
+
+        Args:
+            profile_data (dict): returned from eRep
+            p_frec (dict): mirrors ST.FriendsFields
+
+        Returns:
+            dict: updated p_frec
+        """
+        frec = p_frec
+        if not isinstance(profile_data["military"], bool)\
+          and not isinstance(profile_data["military"]["militaryData"], bool):
+            frec["aircraft_rank"] = self.convert_val(
+                profile_data['military']['militaryData']["aircraft"]["name"])
+            frec["ground_rank"] = self.convert_val(
+                profile_data['military']['militaryData']["ground"]["name"])
+        if "militaryUnit" in profile_data["military"].keys()\
+          and not isinstance(profile_data["military"], bool)\
+          and not isinstance(profile_data["military"]["militaryUnit"], bool):
+            frec["militia_name"] = self.convert_val(
+                profile_data['military']['militaryUnit']['name'])
+            frec["military_rank"] = self.convert_val(
+                profile_data['military']['militaryUnit']["militaryRank"])
+            frec["militia_url"] = self.convert_val(
+                self.cfgd["data"].erep_url +\
+                "/military/military-unit/" +\
+                str(profile_data['military']['militaryUnit']['id']) +\
+                "/overview")
+            frec["militia_size"] = self.convert_val(
+                profile_data['military']['militaryUnit']['member_count'])
+            frec["militia_avatar_link"] = self.convert_val(
+                "https:" + profile_data['military']['militaryUnit']["avatar"])
+        return frec
+
+    def get_citizen_press_data(self,
+                               profile_data: dict,
+                               p_frec: dict) -> dict:
+        """Extract citizen presss data from profile response.
+
+        Args:
+            profile_data (dict): returned from eRep
+            p_frec (dict): mirrors ST.FriendsFields
+
+        Returns:
+            dict: updated p_frec
+        """
+        frec = p_frec
+        if "newspaper" in profile_data.keys()\
+          and not isinstance(profile_data['newspaper'], bool):
+            frec["newspaper_name"] = self.convert_val(
+                profile_data['newspaper']['name'])
+            frec["newspaper_avatar_link"] = self.convert_val(
+                "https:" + profile_data['newspaper']["avatar"])
+            frec["newspaper_url"] = self.convert_val(
+                self.cfgd["data"].erep_url + "/main/newspaper/" +\
+                str(profile_data['newspaper']["stripped_title"]) + "-" +\
+                str(profile_data['newspaper']["id"]) + "/1")
+        return frec
+
+    def get_citizen_profile(self,
+                            p_profile_id: str,
+                            p_use_file: bool) -> dict:
+        """Retrieve profile for a citizen from eRepublik.
+
+        Save profile data to a file and return selected values as a dict.
+
+        Args:
+            p_profile_id (str): citizen ID
+            p_use_file (bool): if True and a file already exists, read it
+                instead of connecting to eRep. Whether True or False, if
+                connecting to eRep, save a file.
 
         Raises:
             ValueError if profile ID returns 404 from eRepublik
 
         Returns:
-            dataclass instance: ST.ControlsFields
+            dict: modeled on ST.FriendsFields dataclass
         """
-        file_nm = "profile_response_{}".format(profile_id)
-        profile_file = path.abspath(path.join(self.cfgd["data"].log_path, file_nm))
-        if Path(profile_file).exists():
+        frec = dict()
+        for cnm in ST.FriendsFields.keys():
+            frec[cnm] = str(copy(getattr(ST.FriendsFields, cnm)))
+        file_nm = "profile_response_{}".format(p_profile_id)
+        profile_file = path.abspath(path.join(self.cfgd["data"].log_path,
+                                    file_nm))
+        if Path(profile_file).exists() and p_use_file:
             with open(profile_file) as pf:
-                profile_data = json.loads(pf.read())        # convert to dict
+                profile_data = json.loads(pf.read())
+            if self.logme:
+                msg = "User {} ".format(str(p_profile_id))
+                msg += "profile data read from file"
+                self.LOG.write_log(ST.LogLevel.DEBUG, msg)
         else:
             profile_url = self.cfgd["data"].erep_url +\
-                "/main/citizen-profile-json/" + profile_id
-            response = requests.get(profile_url)       # returns JSON
+                "/main/citizen-profile-json/" + p_profile_id
+            response = requests.get(profile_url)
             if response.status_code == 404:
                 msg = "Invalid eRepublik Profile ID."
                 raise Exception(ValueError, msg)
-            profile_data = json.loads(response.text)   # convert to dict
+            profile_data = json.loads(response.text)
             with open(profile_file, "w") as f:
-                f.write(str(response.text))            # save a copy
+                f.write(str(response.text))
+            if self.logme:
+                msg = "User {} ".format(str(p_profile_id))
+                msg += "profile data saved to file"
+                self.LOG.write_log(ST.LogLevel.DEBUG, msg)
 
-        f_rec = ST.FriendsFields
-        # Set this up as a dict instead, using FriendsFields as the defaults
-        f_rec.profile_id = profile_id
-        f_rec.name = profile_data["citizen"]["name"]
-        f_rec.is_alive = profile_data["citizen"]["is_alive"]
-        f_rec.is_adult = profile_data["isAdult"]
-        f_rec.avatar_link = profile_data["citizen"]["avatar"]
-        f_rec.level = profile_data["citizen"]["level"]
-        f_rec.xp =\
-            profile_data["citizenAttributes"]["experience_points"]
-        f_rec.friends_count = profile_data["friends"]["number"]
-        f_rec.achievements_count = len(profile_data["achievements"])
-        f_rec.is_in_congress = profile_data['isCongressman']
-        f_rec.is_ambassador = profile_data['isAmbassador']
-        f_rec.is_dictator = profile_data['isDictator']
-        f_rec.is_country_president = profile_data['isPresident']
-        f_rec.is_top_player = profile_data['isTopPlayer']
-        f_rec.is_party_member = profile_data["isPartyMember"]
-        f_rec.is_party_president = profile_data["isPartyPresident"]
+        frec["profile_id"] = p_profile_id
+        frec = self.get_basic_citizen_profile(profile_data, frec)
+        frec = self.get_citizen_location_data(profile_data, frec)
+        frec = self.get_citizen_party_data(profile_data, frec)
+        frec = self.get_citizen_military_data(profile_data, frec)
+        frec = self.get_citizen_press_data(profile_data, frec)
+        return frec
 
-        f_rec.citizenship_country =\
-            profile_data["location"]["citizenshipCountry"]["name"]
-
-        if not isinstance(profile_data["military"], bool)\
-          and not isinstance(profile_data["military"]["militaryData"], bool):
-            f_rec.aircraft_rank =\
-                profile_data['military']['militaryData']["aircraft"]["name"]
-            f_rec.ground_rank =\
-                profile_data['military']['militaryData']["ground"]["name"]
-
-        if "residenceCity" in profile_data.keys():
-            f_rec.residence_city =\
-                profile_data["city"]["residenceCity"]["name"]
-            f_rec.residence_region =\
-                profile_data["city"]["residenceCity"]["region_name"]
-            f_rec.residence_country =\
-                profile_data["city"]["residenceCity"]["country_name"]
-
-        if "partyData" in profile_data.keys()\
-          and profile_data["partyData"] != []\
-          and not isinstance(profile_data["partyData"], bool)\
-          and not isinstance(profile_data["partyData"], str):
-            f_rec.party_name = str(profile_data["partyData"]["name"])
-            f_rec.party_avatar_link =\
-                "https:" + profile_data["partyData"]["avatar"]
-            f_rec.party_orientation =\
-                profile_data["partyData"]["economical_orientation"]
-            f_rec.party_url = self.cfgd["data"].erep_url + "/party/" +\
-                str(profile_data["partyData"]["stripped_title"]) + "-" +\
-                str(profile_data["partyData"]["id"]) + "/1"
-
-        if "militaryUnit" in profile_data["military"].keys()\
-          and not isinstance(profile_data["military"], bool)\
-          and not isinstance(profile_data["military"]["militaryUnit"], bool):
-            f_rec.militia_name =\
-                str(profile_data['military']['militaryUnit']['name'])
-            f_rec.military_rank =\
-                profile_data['military']['militaryUnit']["militaryRank"]
-            f_rec.militia_url = self.cfgd["data"].erep_url +\
-                "/military/military-unit/" +\
-                str(profile_data['military']['militaryUnit']['id']) +\
-                "/overview"
-            f_rec.militia_size =\
-                profile_data['military']['militaryUnit']['member_count']
-            f_rec.militia_avatar_link =\
-                "https:" + profile_data['military']['militaryUnit']["avatar"]
-
-        if "newspaper" in profile_data.keys()\
-          and not isinstance(profile_data['newspaper'], bool):
-            f_rec.newspaper_name =\
-                str(profile_data['newspaper']['name'])
-            f_rec.newspaper_avatar_link =\
-                "https:" + profile_data['newspaper']["avatar"]
-            f_rec.newspaper_url = self.cfgd["data"].erep_url + "/main/newspaper/" +\
-                str(profile_data['newspaper']["stripped_title"]) + "-" +\
-                str(profile_data['newspaper']["id"]) + "/1"
-
-        # Cast to string and remove embedded apostrophes.
-        for field in ST.FIELDS["friends"]:
-            val = str(getattr(f_rec, field)).replace("'", "_")
-            setattr(f_rec, field, val)
-
-        if self.logme and self.cfgd["data"].log_level == ST.LogLevel.DEBUG:
-            msg = "user_profile: {}".format(profile_data)
-            self.LOG.write_log(ST.LogLevel.DEBUG, msg)
-        return f_rec
+# #######################################################
 
     def request_friends_data(self, profile_id: str) -> str:
         """Send PM-posting request to eRepublik.
@@ -497,7 +609,7 @@ class Controls(object):
         for friend in friends_data:
             print("Getting profile for {} ... ".format(friend["name"]))
             # eventually, this will be modified to return a dict:s
-            frec = self.get_user_profile(friend["id"])
+            frec = self.get_citizen_profile(friend["id"])
             friends_rec = dict()
             for cnm in ST.FriendsRec.keys():
                 friends_rec[cnm] = copy(getattr(frec, cnm))
@@ -523,7 +635,7 @@ class Controls(object):
             urec["user_erep_password"] = erep_pass
             urec["encrypt_all"] = False
             DB.write_db("add", "user", urec, None, True)
-            frec = self.get_user_profile(id_info.profile_id)
+            frec = self.get_citizen_profile(id_info.profile_id)
             friend_rec = dict()
             for cnm in ST.FriendsFields.keys():
                 friend_rec[cnm] = copy(getattr(frec, cnm))
