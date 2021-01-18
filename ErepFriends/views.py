@@ -43,27 +43,30 @@ class Views(object):
         if not self.user\
             or (self.cfgr.log_path is None or
                 self.cfgr.log_level is None or
-                self.cfgr.bkup_path is None):
+                self.cfgr.bkup_db_path is None):
             self.make_configs_editor()
         # Next:
         # Integrate results of config choices into flow
         # Some simple help instructions
             # More detailed suggestions on accumulating friends
-        # Calling CN to check on status of user table
+        # View log screen
+        # Modify encrypt stuff so that only user table is encrypted at the
+        #  column level. Do away with "encrypt_all" option. If that is desired,
+        #  then use sqlite facilities to do it at the file level.
         # Verifications regarding logs, log level, backups, login credentials
-        # Database generation and set up
-        # User table and user friends record set-up
         # Gather friends list and populate friends table
         # Schedule, or manually trigger backups
-        # Implement update and delete logic
+        # Refactor update and delete logic
         # Implement views (test out in DB;
         #   instantiate as part of table set-up)
         # Implement view-based queries
-        # Implement friends-data refreshes (including user-friend)
+        # Implement data refreshes
         # Design, implement tools, reports, visualizations:
             # Help designing in-game PM's
             # Time-series reports on .. party members, militia members
         # Look into methods for gathering IDs without having to be friends
+            # Buying (?) lists
+            # Gathering lists by residence (all in a country, all in game, etc.)
         # Figure out what is going on with residenceCity
             # and any other faulty attributes
 
@@ -193,16 +196,12 @@ class Views(object):
         erep_email = str(self.email.get()).strip()
         erep_passw = str(self.passw.get()).strip()
         if erep_email and erep_passw:
-            # 1.a Do a login to verify credentials and gather name
-            # 1.b This will be the same if done from Connect screen
             id_info = CN.login_erep(erep_email, erep_passw, True)
-            # 2. If successful, get user profile data
             profile_data = CN.get_citizen_profile(id_info.profile_id, True)
-            # 3. If successful, save user record and a friends record for user
-            pp(id_info.profile_id)
-            pp(id_info.user_name)
-            pp(profile_data)
+            CN.write_user_rec(id_info.profile_id, erep_email, erep_passw)
+            CN.write_friends_rec(profile_data)
             # 4. Return feedback for message to display in GUI
+            # 5. Direct user to the friends window for more processing
             return(self.cfgr.w_m_user,
                    self.cfgr.w_connected + "\n" +
                    self.cfgr.w_m_user_data + "\n" +
@@ -267,6 +266,19 @@ class Views(object):
         Only do interactive connections to erep from this screen.
         Refresh user's profile.
         Refresh user's friends list.
+
+        @DEV -- tweak this as follows:
+        1. Provide ability to refresh user data and user profile data,
+        but don't require it.
+        2. This screen is mainly about gathering the friends list and
+        loading the profile data for the friends list.  Should have an
+        option to:
+        2.a. Refresh the friends list (of profile IDs)
+        2.b. Refresh the friends list profile data
+        2.c. Refresh the profile data for a specific profile ID
+        2.d. Pull in profile data for a list of IDs other than the friends list
+
+        We'll make another screen for producing reports, visualzations.
         """
         def set_context():
             setattr(self.buffer, 'current_frame', 'connect')
@@ -309,7 +321,16 @@ class Views(object):
         set_inputs()
 
     def make_configs_editor(self):
-        """Construct frame for entering configuration info."""
+        """Construct frame for entering configuration info.
+
+        @DEV: Consider adding to this:
+        1. A checkbox or something to turn logging on or to make sure
+           logging is always turned on (or not).
+        2. Settings related to database backups.
+        3. Load values into login email and passw if user record exists.
+        4. Maybe some kind of integrated help or status indicators.
+        5. Buttons to complement the save/close File menu options.
+        """
 
         def set_context():
             setattr(self.buffer, 'current_frame', 'config')

@@ -548,9 +548,38 @@ class Controls(object):
         frec = self.get_citizen_press_data(profile_data, frec)
         return frec
 
+    def write_user_rec(self, p_profile_id: str,
+                             p_erep_email: str,
+                             p_erep_passw: str):
+        """Add user record to database.
+
+        Args:
+            p_profile_id (str): verified eRep citizen profile ID
+            p_erep_email (str): verified eRep login email address
+            p_erep_passw (str): verified eRep login password
+        """
+        urec = dict()
+        for cnm in ST.UserFields.keys():
+            urec[cnm] = copy(getattr(ST.UserFields, cnm))
+        urec["user_erep_profile_id"] = p_profile_id
+        urec["user_erep_email"] = p_erep_email
+        urec["user_erep_password"] = p_erep_passw
+        urec["encrypt_all"] = False
+        DB.write_db("add", "user", urec, p_pid=None, p_encrypt=True)
+
+    def write_friends_rec(self, p_frec: dict):
+        """Add friends record to database.
+
+        Args:
+            p_frec (dict): mirrors ST.FriendsFields
+        """
+        urec = self.get_database_user_data()
+        DB.write_db("add", "friends", p_frec, p_pid=None,
+                    p_encrypt=urec["data"].encrypt_all)
+
 # #######################################################
 
-    def request_friends_data(self, profile_id: str) -> str:
+    def request_friends_list(self, profile_id: str) -> str:
         """Send PM-posting request to eRepublik.
 
         The PM Posting request will fail due to captcha's.
@@ -599,7 +628,7 @@ class Controls(object):
             with open(friends_file) as ff:
                 friends_data = ff.read()
         else:
-            friends_data = self.request_friends_data(profile_id)
+            friends_data = self.request_friends_list(profile_id)
         # parse friends data file or response
         friends_data = friends_data.replace("\t", "").replace("\n", "")
         friends_data = friends_data.split('$j("#citizen_name").tokenInput(')

@@ -85,7 +85,7 @@ class Dbase(object):
         self.dmain_conn = sq3.connect(p_main_db)
 
     def get_data_keys(self, p_tbl_nm: Types.tblnames) -> list:
-        """Get column names for selected DB table.
+        """Get "data" class column names for selected DB table.
 
         Args:
             p_tbl_nm (Types.tblnames): config, user or friends
@@ -188,9 +188,9 @@ class Dbase(object):
         for cnm, val in p_data_rec.items():
             if cnm != "encrypt_key"\
             and val not in (None, "None", ""):             # then hash
-                hash_str += val
+                hash_str += str(val)
                 if p_audit_rec["is_encrypted"] == "True":  # and encrypt
-                    data_rec[cnm] = CI.encrypt(val, p_encrypt_key)
+                    data_rec[cnm] = CI.encrypt(str(val), p_encrypt_key)
         audit_rec["hash_id"] = UT.get_hash(hash_str)
         return(data_rec, audit_rec)
 
@@ -245,6 +245,9 @@ class Dbase(object):
         encrypt_all = p_data_rec["encrypt_all"]\
                       if p_tbl_nm == 'user' else False
         encrypt_key, encrypt_all = self.get_encrypt_key(p_tbl_nm, encrypt_all)
+        if p_tbl_nm == "user":
+            p_data_rec["encrypt_key"] = encrypt_key
+            p_data_rec["encrypt_all"] = encrypt_all
         if p_encrypt or encrypt_all in (True, "True"):
             audit_rec["is_encrypted"] = "True"
         data_rec, audit_rec =\
@@ -359,7 +362,7 @@ class Dbase(object):
             list: decrypted list of dataclass-formatted results
         """
         if p_tbl_nm == "user":
-            encrypt_key = p_data_list["data"][0].encrypt_key
+            encrypt_key = p_data_list[0]["data"].encrypt_key
         else:
             user_rec = self.query_user()
             if not user_rec:
@@ -367,14 +370,14 @@ class Dbase(object):
                 raise Exception(ValueError, msg)
             encrypt_key = user_rec["data"].encrypt_key
         data_keys = self.get_data_keys(p_tbl_nm)
-        col_nms = (cnm for cnm in data_keys if cnm != "encrypt_key")
+        data_keys.remove("encrypt_key")
         data_list = list()
-        for ix, row in enumerate(p_data_list):
-            for cnm in col_nms:
+        for row in p_data_list:
+            for cnm in data_keys:
                 encrypted_val = getattr(row["data"], cnm)
                 decrypt_val = CI.decrypt(encrypted_val, encrypt_key)
                 setattr(row["data"], cnm, decrypt_val)
-                data_list[ix] = row
+            data_list.append(row)
         return(data_list)
 
     def format_query_result(self,
