@@ -128,7 +128,7 @@ class Utils(object):
 
     @classmethod
     def make_namedtuple(cls,
-                        p_name: str, 
+                        p_name: str,
                         p_dict: dict) -> namedtuple:
         """Convert dict to namedtuple.
 

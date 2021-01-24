@@ -171,6 +171,8 @@ class Structs(object):
         m_bkups_on: str = "Backup and Archive databases enabled."
         m_user: str = "User verified."
         m_user_data: str = "User credentials and profile stored."
+        m_user_key_ok: str = "User eRep Tools API key verified."
+        m_user_key_not_ok: str = "User eRep Tools API key FAILED verification."
 
         connected: str = 'Login to eRepublik verified'
         login_failed: str = 'eRep login failed. Please review credentials'

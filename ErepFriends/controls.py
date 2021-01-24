@@ -8,21 +8,16 @@ Module:    controls.py
 Class:     Controls/0  inherits object
 Author:    PQ <pq_rfw @ pm.me>
 """
-import fnmatch
-import getpass
 import json
 import sys
 import time
-import tkinter as tk
 from collections import namedtuple
 from copy import copy
-from os import listdir, mkdir, path
+from os import path
 from pathlib import Path
 from pprint import pprint as pp  # noqa: F401
-from tkinter import messagebox, ttk
 
 import requests
-from tornado.options import define, options
 
 from dbase import Dbase
 from logger import Logger
@@ -80,12 +75,7 @@ class Controls(object):
 
     def convert_data_record(self,
                             p_data_rows: dict) -> tuple:
-        """Return False if no data was recovered from DB
-
-        And convert dictionaries to named tuples. In this
-        class, we only ever expect to have a single row of
-        data returned, so we use namedtuples to make reading
-        the code a little easier.
+        """Convert dicts to named tuples. Or False if no data.
 
         Args:
             p_data_rows (dict): with "data" and "audit" dicts
@@ -125,13 +115,9 @@ class Controls(object):
     def enable_logging(self):
         """Assign log file location. Instantiate Logger object."""
         cfd, _ = self.get_config_data()
-
-        pp(("cfd", cfd))
-        pp(("cfd.log_level", cfd.log_level))
-
         self.logme = False
-        if cfd.log_level not in (None, "None")\
-        and cfd.log_level != ST.LogLevel.NOTSET:
+        if (cfd.log_level not in (None, "None")
+                and cfd.log_level != ST.LogLevel.NOTSET):
             self.logme = True
             log_file = path.join(cfd.log_path, cfd.log_name)
             self.LOG = Logger(log_file, cfd.log_level)
@@ -280,9 +266,9 @@ class Controls(object):
         return response_text
 
     def verify_citizen_credentials(self,
-                   p_email: str,
-                   p_password: str,
-                   p_use_response_file: bool) -> str:
+                                   p_email: str,
+                                   p_password: str,
+                                   p_use_response_file: bool) -> str:
         """Login to eRepublik to confirm credentials and get profile ID.
 
         Args:
@@ -332,6 +318,36 @@ class Controls(object):
         self.logout_erep(cfd)
         return id_info
 
+    def verify_api_key(self,
+                       p_profile_id: str,
+                       p_api_key: str) -> bool:
+        """Verify that erepublik tools API key functions.
+
+        It should return a JSON package when used with a valid profile ID.
+
+        Args:
+            p_profile_id (str): User's eRepublik Profile ID
+            p_api_key (str): User's eRepublik Tools API Key
+
+        Returns:
+            bool: True if apikey works, else False
+        """
+        url = "https://api.erepublik.tools/v0/citizen/"
+        url += str(p_profile_id)
+        url += "?key={}".format(str(p_api_key))
+        response = requests.get(url)
+        response_text = json.loads(response.text)
+        if response.status_code in (400, 404):
+            msg = "Verification of eRep Tools API key failed. "
+            msg += response_text["message"]
+            if self.logme:
+                self.LOG.write_log(ST.LogLevel.ERROR, msg)
+            else:
+                print(msg)
+            return False
+        else:
+            return True
+
     def close_controls(self):
         """Close connections. Close the log."""
         if self.erep_csrf_token is not None:
@@ -343,7 +359,7 @@ class Controls(object):
             pass
 
     def convert_val(self, p_erep_value) -> str:
-        """Convert eRep/JSON values to SQL- and Python-friendlier strings."
+        """Convert eRep/JSON values to Python & SQL-friendly strings.
 
         Args:
             p_erep_value (any): true, false, "", [], numbers
@@ -377,7 +393,8 @@ class Controls(object):
         citrec["is_alive"] =\
             self.convert_val(profile_data["citizen"]["is_alive"])
         citrec["is_adult"] = self.convert_val(profile_data["isAdult"])
-        citrec["avatar_link"] = self.convert_val(profile_data["citizen"]["avatar"])
+        citrec["avatar_link"] =\
+            self.convert_val(profile_data["citizen"]["avatar"])
         citrec["level"] =\
             self.convert_val(profile_data["citizen"]["level"])
         citrec["xp"] =\
@@ -389,12 +406,16 @@ class Controls(object):
             self.convert_val(len(profile_data["achievements"]))
         citrec["is_in_congress"] =\
             self.convert_val(profile_data['isCongressman'])
-        citrec["is_ambassador"] = self.convert_val(profile_data['isAmbassador'])
-        citrec["is_dictator"] = self.convert_val(profile_data['isDictator'])
+        citrec["is_ambassador"] =\
+            self.convert_val(profile_data['isAmbassador'])
+        citrec["is_dictator"] =\
+            self.convert_val(profile_data['isDictator'])
         citrec["is_country_president"] =\
             self.convert_val(profile_data['isPresident'])
-        citrec["is_top_player"] = self.convert_val(profile_data['isTopPlayer'])
-        citrec["is_party_member"] = self.convert_val(profile_data["isPartyMember"])
+        citrec["is_top_player"] =\
+            self.convert_val(profile_data['isTopPlayer'])
+        citrec["is_party_member"] =\
+            self.convert_val(profile_data["isPartyMember"])
         citrec["is_party_president"] =\
             self.convert_val(profile_data["isPartyPresident"])
         return citrec
@@ -439,10 +460,10 @@ class Controls(object):
             dict: updated p_citrec
         """
         citrec = copy(p_citrec)
-        if "partyData" in profile_data.keys()\
-          and profile_data["partyData"] != []\
-          and not isinstance(profile_data["partyData"], bool)\
-          and not isinstance(profile_data["partyData"], str):
+        if ("partyData" in profile_data.keys()
+                and profile_data["partyData"] != []
+                and not isinstance(profile_data["partyData"], bool)
+                and not isinstance(profile_data["partyData"], str)):
             citrec["party_name"] =\
                 self.convert_val(profile_data["partyData"]["name"])
             citrec["party_avatar_link"] = self.convert_val(
@@ -450,8 +471,8 @@ class Controls(object):
             citrec["party_orientation"] = self.convert_val(
                 profile_data["partyData"]["economical_orientation"])
             citrec["party_url"] = self.convert_val(
-                p_cfd.erep_url + "/party/" +\
-                str(profile_data["partyData"]["stripped_title"]) + "-" +\
+                p_cfd.erep_url + "/party/" +
+                str(profile_data["partyData"]["stripped_title"]) + "-" +
                 str(profile_data["partyData"]["id"]) + "/1")
         return citrec
 
@@ -470,22 +491,24 @@ class Controls(object):
             dict: updated p_citrec
         """
         citrec = copy(p_citrec)
-        if not isinstance(profile_data["military"], bool)\
-          and not isinstance(profile_data["military"]["militaryData"], bool):
+        if (not isinstance(profile_data["military"], bool)
+                and not
+                isinstance(profile_data["military"]["militaryData"], bool)):
             citrec["aircraft_rank"] = self.convert_val(
                 profile_data['military']['militaryData']["aircraft"]["name"])
             citrec["ground_rank"] = self.convert_val(
                 profile_data['military']['militaryData']["ground"]["name"])
-        if "militaryUnit" in profile_data["military"].keys()\
-          and not isinstance(profile_data["military"], bool)\
-          and not isinstance(profile_data["military"]["militaryUnit"], bool):
+        if ("militaryUnit" in profile_data["military"].keys()
+                and not isinstance(profile_data["military"], bool)
+                and not
+                isinstance(profile_data["military"]["militaryUnit"], bool)):
             citrec["militia_name"] = self.convert_val(
                 profile_data['military']['militaryUnit']['name'])
             citrec["military_rank"] = self.convert_val(
                 profile_data['military']['militaryUnit']["militaryRank"])
             citrec["militia_url"] = self.convert_val(
-                p_cfd.erep_url + "/military/military-unit/" +\
-                str(profile_data['military']['militaryUnit']['id']) +\
+                p_cfd.erep_url + "/military/military-unit/" +
+                str(profile_data['military']['militaryUnit']['id']) +
                 "/overview")
             citrec["militia_size"] = self.convert_val(
                 profile_data['military']['militaryUnit']['member_count'])
@@ -508,15 +531,15 @@ class Controls(object):
             dict: updated p_citrec
         """
         citrec = p_citrec
-        if "newspaper" in profile_data.keys()\
-          and not isinstance(profile_data['newspaper'], bool):
+        if ("newspaper" in profile_data.keys()
+                and not isinstance(profile_data['newspaper'], bool)):
             citrec["newspaper_name"] = self.convert_val(
                 profile_data['newspaper']['name'])
             citrec["newspaper_avatar_link"] = self.convert_val(
                 "https:" + profile_data['newspaper']["avatar"])
             citrec["newspaper_url"] = self.convert_val(
-                p_cfd.erep_url + "/main/newspaper/" +\
-                str(profile_data['newspaper']["stripped_title"]) + "-" +\
+                p_cfd.erep_url + "/main/newspaper/" +
+                str(profile_data['newspaper']["stripped_title"]) + "-" +
                 str(profile_data['newspaper']["id"]) + "/1")
         return citrec
 
@@ -575,10 +598,11 @@ class Controls(object):
         citrec = self.get_citizen_press_data(profile_data, citrec, cfd)
         return citrec
 
-    def write_user_rec(self, p_profile_id: str,
-                             p_erep_email: str,
-                             p_erep_passw: str,
-                             p_erep_apikey: str):
+    def write_user_rec(self,
+                       p_profile_id: str,
+                       p_erep_email: str,
+                       p_erep_passw: str,
+                       p_erep_apikey: str):
         """Add or updated user record on database.
 
         Args:
@@ -610,13 +634,7 @@ class Controls(object):
         if ctza is None:
             DB.write_db("add", "citizen", p_citrec, p_pid=None)
         else:
-
-            pp(("ctza", ctza))
-            pp(("ctza.pid", ctza.pid))
-
             DB.write_db("upd", "citizen", p_citrec, p_pid=ctza.pid)
-
-# #######################################################
 
     def request_friends_list(self, profile_id: str) -> str:
         """Send PM-posting request to eRepublik.
@@ -630,8 +648,9 @@ class Controls(object):
         Returns:
             response text
         """
-        msg_url = "{}/main/messages-compose/{}".format(self.cfgd["data"].erep_url,
-                                                       profile_id)
+        msg_url =\
+            "{}/main/messages-compose/{}".format(self.cfgd["data"].erep_url,
+                                                 profile_id)
         msg_headers = {
             "Referer": msg_url,
             "X-Requested-With": "XMLHttpRequest"}
@@ -684,384 +703,3 @@ class Controls(object):
                 citizen_rec[cnm] = copy(getattr(citrec, cnm))
             DB.write_db("add", "citizen", citizen_rec, None, False)
             time.sleep(.300)
-
-    ## XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-    ##  Code imported from "erep_messenger"  ###############################
-
-    def send_message(self, profile_data):
-        """
-        Send message to one recipient
-
-        Dang! --> "The challenge solution was incorrect"
-
-        "sitekey":"6Lf490AUAAAAAIqP0H7DFfXF5tva00u93wxAQ--h"
-
-        See: https://stackoverflow.com/questions/30647113/not-a-robot-recaptcha-without-a-form-but-ajax-instead
-
-        :Args: {string} citizen profile ID - tab - citizen name
-        """
-        # Prep message
-        profile = profile_data.split("\t")
-        self.citizen_id = profile[0].strip()
-        self.citizen_name = profile[1].strip()
-        m_sub = self.subject.get()
-        m_body = self.msg_body.get(1.0, tk.END)
-        m_body = m_body.replace("[citizen]", self.citizen_name)
-        m_body = m_body.replace("[user]", self.user_name)
-        # Send message
-        msg_url = "https://www.erepublik.com/en/main/messages-compose/{}".format(self.citizen_id)
-        msg_headers = {
-            "Referer": msg_url,
-            "X-Requested-With": "XMLHttpRequest"}
-        send_message = {
-            "_token": self.erep_csrf_token,
-            "citizen_name": self.citizen_id,
-            # "citizen_name": self.citizen_name,
-            "citizen_subject": m_sub,
-            "citizen_message": m_body}
-
-        msg_response = self.erep_rqst.post(
-            msg_url, data=send_message, headers=msg_headers, allow_redirects = False)
-
-        self.status_text.config(text = "{}{}".format(self.cfgd["data"].w_txt_sent_to, profile_data))
-
-
-
-
-
-    def ___set_graphic_interface(self):
-        """ Construct GUI widgets for Controls app
-        """
-        # Window widgets
-        self.win_emsg = tk.Tk()     # "root"
-        self.win_save = None        # subsidiary
-        self.win_load = None        # subsidiary
-
-        self.make_root_emsg_window()
-        self.make_menus()
-        self.make_status_widgets()
-        self.make_profile_ids_editor()
-        self.make_message_editor()
-
-    def do_nothing(self):
-        """ Used for item separators in menus """
-        return True
-
-    def load_list_file(self):
-        """
-        Read data from selected file and load it into the id_list widget
-        """
-        id_list_ix = self.id_file_list.curselection()[0]
-        id_list = self.listdir_files[id_list_ix]
-        with open(path.abspath(path.join(self.app_dir, "db/{}".format(id_list))),
-                  "r") as f:
-            id_list_data = f.read()
-        self.clear_list()
-        self.id_list.insert(tk.INSERT, id_list_data)
-        self.status_text.config(text = "{}{}".format(self.cfgd["data"].w_txt_file_loaded, id_list))
-        self.win_load.withdraw()
-
-    def load_list_dialog(self):
-        """
-        Populate the profile ids list from a ".list" file stored in the db directory
-        """
-        if self.win_load is None:
-            self.win_load = tk.Toplevel()
-            self.win_load.title(self.cfgd["data"].w_cmd_save_list)
-            self.win_load.geometry('400x325+300+200')
-            load_frame = ttk.Frame(self.win_load)
-            load_frame.grid(row=4, column=2)
-            ttk.Label(load_frame, text=self.cfgd["data"].w_cmd_load_list).grid(row=0, column=1)
-            ttk.Label(load_frame, text=self.cfgd["data"].s_file_name).grid(row=1, column=1, sticky=tk.W)
-            # @DEV - Had trouble getting scroll bars to work as desired
-            #   so omitting them for now
-            self.id_file_list = tk.Listbox(load_frame, selectmode=tk.SINGLE, width=40)
-            self.id_file_list.grid(row=2, column=1)
-            ttk.Button(load_frame, text=self.cfgd["data"].s_cancel,
-                       command=self.win_load.withdraw).grid(row=4, column=1, sticky=tk.W)
-            ttk.Button(load_frame, text=self.cfgd["data"].s_load,
-                       command=self.load_list_file).grid(row=4, column=1)
-        else:
-            self.win_load.deiconify()
-
-        # Load .list file names from db directory
-        self.listdir_files =\
-            fnmatch.filter(listdir(path.abspath(path.join(self.app_dir, 'db'))), '*.list')
-        self.id_file_list.delete(0, self.id_file_list.size())
-        for file_nm in self.listdir_files:
-            self.id_file_list.insert(self.listdir_files.index(file_nm) + 1, file_nm)
-
-    def save_list_file(self):
-        """
-        Save the current list of Profile IDs as a file
-
-        @DEV: Note that for pulling text from tk Entry widgets,
-               we either define a "textvariable" or just do a .get() with no indexes
-        """
-        self.current_file_name = self.id_list_file_entry.get()
-        self.current_file_name = self.current_file_name.replace(" ", "_").replace("\n", "").replace("'", "_").replace(".list", "").replace(".", "_")
-        self.current_file_name = "{}.list".format(self.current_file_name.lower())
-        file_path = path.abspath(path.join(self.app_dir, "db/{}".format(self.current_file_name)))
-        with open(file_path, "w") as f:
-            f.write(self.id_list.get(1.0, tk.END))
-        if self.logme:
-            self.LOG.write_log(ST.LogLevel.INFO, "Citizens ID .list saved at: {}".format(file_path))
-
-        self.win_save.withdraw()
-
-    def save_list_dialog(self):
-        """
-        Dialog window for saving the current list of Profile IDs as a file
-
-        @DEV - Run edits / clean-ups on file name and contents once I have them working
-        @DEV - "Toplevel" is tk-speak for creating a new window under the root app
-        @DEV - After creating it once, we "withdraw" it to close and then "deiconify" to restore
-        """
-        if self.win_save is None:
-            self.win_save = tk.Toplevel()
-            self.win_save.title(self.cfgd["data"].w_cmd_save_list)
-            self.win_save.geometry('400x125+300+200')
-            save_frame = ttk.Frame(self.win_save)
-            save_frame.grid(row=3, column=2)
-            ttk.Label(save_frame, text=self.cfgd["data"].s_file_name).grid(row=0, column=0, sticky=tk.W)
-            self.id_list_file_entry = ttk.Entry(save_frame, width=40)
-            if self.current_file_name is not None:
-                self.id_list_file_entry.insert(tk.INSERT, self.current_file_name)
-            self.id_list_file_entry.grid(row=0, column=1)
-            ttk.Button(save_frame, text=self.cfgd["data"].s_cancel,
-                       command=self.win_save.withdraw).grid(row=2, column=1, sticky=tk.W)
-            ttk.Button(save_frame, text=self.cfgd["data"].s_save,
-                       command=self.save_list_file).grid(row=2, column=1)
-        else:
-            self.win_save.deiconify()
-
-    def clear_list(self):
-        """
-        Wipe the ID list
-        """
-        self.id_list.delete(1.0, tk.END)
-        self.status_text.config(text = self.cfgd["data"].w_cmd_make_list)
-
-    def clean_list(self):
-        """
-        Clean up the Profile ID list
-
-        :Return: {string} scrubbed version of the Profile ID List data or False
-        """
-        # Clean up the list
-        list_data_str = self.id_list.get(1.0, tk.END).strip()
-        list_data_str = list_data_str.replace(",", "\n").replace("~", "\n").replace("|", "\n")
-        list_data_str = list_data_str.replace("\n\n", "\n")
-        self.id_list.delete(1.0, tk.END)
-        self.id_list.insert(tk.INSERT, list_data_str)
-
-        # Reject if list is empty
-        if len(list_data_str) < 1:
-            messagebox.showwarning(title = self.cfgd["data"].m_warn_title,
-                                   message = self.cfgd["data"].m_bad_list,
-                                   detail = "\n{}".format(self.cfgd["data"].m_no_id_list))
-            return False
-        else:
-            return list_data_str
-
-    def verify_list(self):
-        """
-        Verify the Profile ID list is OK
-        """
-        self.valid_list = list()
-        list_data_str = self.clean_list()
-        self.status_text.config(text=self.cfgd["data"].m_verifying_ids)
-        if list_data_str:
-            # Verify that each ID has a valid profile on eRepublik
-            list_data = list_data_str.splitlines()
-            for profile_id in list_data:
-                if "\t" in profile_id:
-                    profile_id = profile_id.split("\t")[0]
-                time.sleep(1)
-                profile_url = self.cfgd["data"].erep_url + "/main/citizen-profile-json/" + profile_id
-                response = requests.get(profile_url)
-                # Reject list if it contains an invalid Profile ID
-                if response.status_code == 404:
-                    messagebox.showwarning(title = self.cfgd["data"].m_warn_title,
-                            message = self.cfgd["data"].m_bad_list,
-                            detail = "\n{}".format(self.cfgd["data"].m_bad_id.replace("[citizen]", profile_id)))
-                    if self.logme:
-                        self.LOG.write_log("WARN", "Invalid eRep Profile ID: {}".format(profile_id))
-                    return False
-                else:
-                    # Get current name for Profile ID from eRepublik
-                    citizen_profile = json.loads(response.text)
-                    self.valid_list.append(profile_id + "\t{}".format(citizen_profile["citizen"]["name"]))
-        # Refresh the ID list, showing citizen name along with each profile
-        self.status_text.config(text=self.cfgd["data"].m_ids_verified)
-        self.id_list.delete(1.0, tk.END)
-        self.id_list.insert(tk.INSERT, "\n".join(self.valid_list))
-        return True
-
-    def clear_message(self):
-        """
-        Wipe the Message Subject and Body
-        """
-        self.subject.delete(0, tk.END)      #Entry object
-        self.msg_body.delete(1.0, tk.END)   #Text object
-
-    def verify_message(self):
-        """
-        Verify the Message Subject and Body are OK
-        """
-        bad_msg_txt = None
-        # Subject (Entry object) empty
-        if self.subject is None or len(self.subject.get()) == 0:
-            bad_msg_txt = "\n{}".format(self.cfgd["data"].m_no_subject)
-        else:
-            # Body (Text object) empty
-            msg_body_len = len(self.msg_body.get(1.0, tk.END)) - 1
-            if self.msg_body is None or msg_body_len < 1:
-                bad_msg_txt = "\n{}".format(self.cfgd["data"].m_no_msg_body)
-            # Body too long
-            elif msg_body_len > 2000:
-                bad_msg_txt = "\n{}\n{}{}".format(self.cfgd["data"].m_msg_body_too_long,
-                                                self.cfgd["data"].m_msg_body_current_len,
-                                                str(msg_body_len))
-        if bad_msg_txt is None:
-            return True
-        else:
-            messagebox.showwarning(title = self.cfgd["data"].m_warn_title,
-                                   message = self.cfgd["data"].m_bad_message,
-                                   detail = bad_msg_txt)
-            return False
-
-    def verify_connect(self):
-        """
-        Make sure there is a connection to eRepublik
-        """
-        bad_message = False
-        bad_msg_txt = ""
-        # Not connected to eRepublik
-        if self.erep_csrf_token is None:
-            bad_message = True
-            bad_msg_txt = "\n{}".format(self.cfgd["data"].m_not_logged_in)
-        if bad_message:
-            messagebox.showwarning(title = self.cfgd["data"].m_warn_title,
-                                   message = self.cfgd["data"].m_bad_connect,
-                                   detail = bad_msg_txt)
-            return False
-        else:
-            return True
-
-    def verify_all(self):
-        """
-        Run all the checks before starting to send messages
-
-        :Return: {boolean} False if checks fail else True
-        """
-        if self.verify_list() \
-        and self.verify_message() \
-        and self.verify_connect():
-            return True
-        else:
-            return False
-
-    def send_message_to_next(self):
-        """
-        Attempt to send message to next listed ID
-        """
-        if self.verify_all():
-            self.citizen_ix = 0 if self.citizen_ix is None else self.citizen_ix + 1
-            if self.citizen_ix > len(self.valid_list) - 1:
-                self.status_text.config(text =\
-                    "{} {}".format(self.cfgd["data"].w_txt_list_processed, self.cfgd["data"].w_txt_reload))
-            else:
-                profile_data = self.valid_list[self.citizen_ix]
-                self.send_message(profile_data)
-
-    def send_message_to_all(self):
-        """
-        Attempt to send message to all listed IDs
-        """
-        if self.verify_all():
-            for profile_data in self.valid_list:
-                self.citizen_ix = self.valid_list.index(profile_data)
-                self.send_message(profile_data)
-                time.sleep(1)
-
-            self.status_text.config(text = self.cfgd["data"].w_txt_list_processed)
-
-    def make_root_emsg_window(self):
-        """
-        Construct the ErepFriends app window
-        """
-        self.win_ef.title(self.cfgd["data"].w_title)
-        self.win_ef.geometry('900x600+100+100')
-        self.win_ef.minsize(900,600)
-
-    def make_menus(self):
-        """
-        Construct the app menus
-        """
-        menu_bar = tk.Menu(self.win_emsg)
-
-        file_menu = tk.Menu(menu_bar, tearoff=0)
-        menu_bar.add_cascade(label=self.cfgd["data"].w_file_menu, menu=file_menu)
-        file_menu.add_command(label=self.cfgd["data"].w_cmd_load_list, command=self.load_list_dialog)
-        file_menu.add_command(label=self.cfgd["data"].w_cmd_save_list, command=self.save_list_dialog)
-        file_menu.add_command(label=self.cfgd["data"].w_item_sep, command=self.do_nothing)
-        file_menu.add_command(label=self.cfgd["data"].w_cmd_connect, command=self.connect)
-        file_menu.add_command(label=self.cfgd["data"].w_cmd_disconnect, command=self.disconnect)
-        file_menu.add_command(label=self.cfgd["data"].w_item_sep, command=self.do_nothing)
-        file_menu.add_command(label=self.cfgd["data"].w_cmd_exit, command=self.exit_emsg)
-
-        edit_menu = tk.Menu(menu_bar, tearoff=0)
-        menu_bar.add_cascade(label=self.cfgd["data"].w_edit_menu, menu=edit_menu)
-        edit_menu.add_command(label=self.cfgd["data"].w_cmd_clear_list, command=self.clear_list)
-        edit_menu.add_command(label=self.cfgd["data"].w_cmd_verify_list, command=self.verify_list)
-        edit_menu.add_command(label=self.cfgd["data"].w_item_sep, command=self.do_nothing)
-        edit_menu.add_command(label=self.cfgd["data"].w_cmd_clear_msg, command=self.clear_message)
-        edit_menu.add_command(label=self.cfgd["data"].w_cmd_verify_msg, command=self.verify_message)
-
-        send_menu = tk.Menu(menu_bar, tearoff=0)
-        menu_bar.add_cascade(label=self.cfgd["data"].w_send_menu, menu=send_menu)
-        send_menu.add_command(label=self.cfgd["data"].w_cmd_send_to_next, command=self.send_message_to_next)
-        send_menu.add_command(label=self.cfgd["data"].w_cmd_send_to_all, command=self.send_message_to_all)
-        self.win_ef.config(menu=menu_bar)
-
-    def make_status_widgets(self):
-        """
-        Construct the status message and avatar-display
-        """
-        status_msg = self.cfgd["data"].w_txt_greet.replace("[user]", self.user_name)
-        self.status_text = ttk.Label(self.win_emsg, text=status_msg)
-        self.status_text.grid(column=0, row=0)
-        tk_img = ImageTk.PhotoImage(self.user_avatar_file)
-        user_avatar_img = ttk.Label(self.win_emsg, image=tk_img)
-        user_avatar_img.image = tk_img
-        user_avatar_img.place(x=725, y=20)
-
-    def make_profile_ids_editor(self):
-        """
-        Construct frame for listing profile IDs to send messages to
-        """
-        id_frame = ttk.Frame(self.win_emsg)
-        id_frame.grid(row=4, column=0)
-        ttk.Label(id_frame, text=self.cfgd["data"].t_id_list_title).pack(side="top")
-        scroll_id = ttk.Scrollbar(id_frame)
-        scroll_id.pack(side="right", fill="y", expand=False)
-        self.id_list = tk.Text(id_frame, height=28, width=40, wrap=tk.WORD, yscrollcommand=scroll_id.set)
-        self.id_list.pack(side="left", fill="both", expand=True)
-        scroll_id.config(command=self.id_list.yview)
-
-    def make_message_editor(self):
-        """
-        Construct frame for writing message Subject and Body
-        """
-        msg_frame = ttk.Frame(self.win_emsg)
-        msg_frame.grid(row=4, column=1)
-        ttk.Label(msg_frame, text=self.cfgd["data"].t_subject_title).grid(row=0, column=0, sticky=tk.W)
-        self.subject = ttk.Entry(msg_frame, width=39)
-        self.subject.grid(row=1, column=0)
-        ttk.Label(msg_frame, text=self.cfgd["data"].t_body_title).grid(row=2, column=0, sticky=tk.W)
-        scroll_msg = ttk.Scrollbar(msg_frame)
-        scroll_msg.grid(row=3, column=1, sticky="N,S,W")
-        self.msg_body = tk.Text(msg_frame, height=23, width=44, wrap=tk.WORD, yscrollcommand=scroll_msg.set)
-        self.msg_body.grid(row=3, column=0, sticky=tk.W)
-        scroll_msg.config(command=self.msg_body.yview)

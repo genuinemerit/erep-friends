@@ -10,8 +10,11 @@ Author:    PQ <pq_rfw @ pm.me>
 """
 import tkinter as tk
 from dataclasses import dataclass
+from PIL import Image, ImageTk
 from pprint import pprint as pp                  # noqa: F401
 from tkinter import filedialog, messagebox, ttk  # noqa: F401
+
+import requests
 
 from controls import Controls
 from utils import Utils
@@ -33,7 +36,8 @@ class Views(object):
         self.ST = CN.configure_database()
         self.tx, _ = CN.get_text_data()
         self.set_basic_interface()
-        self.make_configs_editor()
+        if not self.check_user():
+            self.make_configs_editor()
 
     @dataclass
     class buffer:
@@ -99,7 +103,7 @@ class Views(object):
 
     # Event handlers
     def do_nothing(self):
-        """Used for item separators in menus."""   # noqa: D401
+        """Separate menu items."""   # noqa: D401
         return True
 
     def exit_appl(self):
@@ -149,6 +153,20 @@ class Views(object):
         else:
             return("", "")
 
+    def check_user(self) -> bool:
+        """See if user record already exists.
+
+        Returns:
+            bool: True if user record exists.
+        """
+        usrd, _ = CN.get_database_user_data()
+        if usrd is None:
+            return False
+        else:
+            CN.enable_logging()
+            self.make_user_image()
+            return True
+
     def save_user_data(self) -> tuple:
         """Handle updates to user credentials and basic info.
 
@@ -158,9 +176,6 @@ class Views(object):
         erep_email = str(self.email.get()).strip()
         erep_passw = str(self.passw.get()).strip()
         erep_apikey = str(self.apikey.get()).strip()
-        if erep_apikey:
-            # @DEV verify that it actually works
-            pass
         if erep_email and erep_passw:
             id_info = CN.verify_citizen_credentials(erep_email,
                                                     erep_passw, True)
@@ -168,10 +183,16 @@ class Views(object):
                               erep_passw, erep_apikey)
             citzn_rec = CN.get_citizen_profile(id_info.profile_id, True)
             CN.write_citizen_rec(citzn_rec)
-            return(self.tx.m_user,
-                   self.tx.connected + "\n" +
-                   self.tx.m_user_data + "\n" +
-                   self.tx.greet.replace("[user]", id_info.user_name))
+            return_detail = self.tx.connected + "\n" +\
+                            self.tx.m_user_data + "\n"
+            if erep_apikey:
+                if CN.verify_api_key(id_info.profile_id, erep_apikey):
+                    return_detail += self.tx.m_user_key_ok + "\n"
+                else:
+                    return_detail += self.tx.m_user_key_not_ok + "\n"
+            return_detail +=\
+                self.tx.greet.replace("[user]", id_info.user_name)
+            return(self.tx.m_user, return_detail)
         else:
             return("", "")
 
@@ -193,7 +214,7 @@ class Views(object):
                                               result[0], result[1])
             self.close_frame()
             if msg is not None:
-                self.show_message(self.ST.MsgLevel.INFO, msg, detail)
+                self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def select_log_dir(self):
         """Browse for a log directory."""
@@ -404,10 +425,7 @@ class Views(object):
             set_erep_password_input()
             set_apikey_input()
 
-    # make_configs_editor() MAIN:
-
-        print("DEBUG: starting make_configs_editor()...")
-
+        # make_configs_editor() MAIN:
         self.close_frame()
         cf_dflt = {"log_loc": "", "log_lvl": "", "bkup_path": ""}
         usr_dflt = {"email": "", "passw": "", "apikey": ""}
@@ -418,7 +436,7 @@ class Views(object):
         set_labels()
         set_inputs()
 
-    def show_message(self,
+    def make_message(self,
                      p_msg_level: str,
                      p_msg: str,
                      p_detail: str):
@@ -439,6 +457,20 @@ class Views(object):
             m_title = self.tx.m_info_ttl
         messagebox.showwarning(title=m_title, message=p_msg,
                                detail="\n{}".format(p_detail))
+
+    def make_user_image(self):
+        """
+        Construct the status message and avatar-display
+        """
+        # prep data
+        usrd, _ = CN.get_database_user_data()
+        ctzd, _ = CN.get_citizen_data_by_id(usrd.user_erep_profile_id)
+        user_avatar_file =\
+            Image.open(requests.get(ctzd.avatar_link, stream=True).raw)
+        tk_img = ImageTk.PhotoImage(user_avatar_file)
+        user_avatar_img = ttk.Label(self.win_root, image=tk_img)
+        user_avatar_img.image = tk_img
+        user_avatar_img.place(x=10, y=10)
 
     def make_menus(self):
         """Construct the app menus on the root window."""

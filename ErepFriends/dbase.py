@@ -282,11 +282,6 @@ class Dbase(object):
             tuple: (dict: data_rec, dict: audit_rec)
         """
         recs = self.query_latest(p_tbl_nm, p_pid)
-
-        pp(("p_tbl_nm", p_tbl_nm))
-        pp(("p_pid", p_pid))
-        pp(("recs", recs))
-
         aud = UT.make_namedtuple("aud", recs["audit"])
         dat = UT.make_namedtuple("dat", recs["data"])
         if not aud or aud.pid != p_pid:
@@ -302,10 +297,6 @@ class Dbase(object):
             p_data["encrypt_key"] = copy(dat.encrypt_key)
         data_rec, audit_rec =\
             self.hash_data_values(p_data, audit_rec)
-
-        pp(("data_rec", data_rec))
-        pp(("audit_rec", audit_rec))
-
         if p_tbl_nm == "user":
             data_rec = self.encrypt_data_values(p_data)
         if aud.hash_id == audit_rec["hash_id"]:
@@ -318,20 +309,10 @@ class Dbase(object):
         """Set value of delete_ts on the previously-active record."""
         recs = self.query_latest(p_tbl_nm, p_pid, False)
         aud = UT.make_namedtuple("aud", recs[0]["audit"])
-
-        # Assumptions:
-        #  Should always get a list back
-        #  Should never get more than 2 rows back
-        #  The first row in the list has the older update_ts
-        pp(("recs", recs))
-        pp(("recs[0]['audit']", recs[0]['audit']))
-        pp(("recs[1]['audit']", recs[1]['audit']))
-
         dttm = UT.get_dttm('UTC')
         sql = "UPDATE {}".format(p_tbl_nm)
         sql += " SET delete_ts = '{}'".format(dttm.curr_utc)
         sql += " WHERE uid = '{}';".format(aud.uid)
-
         return sql
 
     def execute_txn_sql(self,
@@ -349,9 +330,6 @@ class Dbase(object):
             p_pid (string): if updating a record, used to delete previous
             p_encrypt_key (string): if adding or updating a user record
         """
-
-        pp(("p_sql", p_sql))
-
         self.connect_dmain(self.ST.ConfigFields.main_db)
         cur = self.dmain_conn.cursor()
         if p_encrypt_key:
