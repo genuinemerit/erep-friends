@@ -1,9 +1,55 @@
 # Working Notes
 
+I now have an API key for the erepublik.tools calls. See documentation here:
+https://docs.google.com/spreadsheets/d/1HGFAlHmxPOQxJ9L7ynLjXyNSfQUqHl6bQWErpnQfvAw/edit#gid=0
+
+
+http://api.erepublik.com/map/data/
+    Returns xml that provides a list of all country IDs and Names
+    The regions sub-object lists the regions currently "owned" by the country and includes population and resource information
+
+https://www.erepublik.com/en/military/campaigns-new
+    Returns JSON regarding battles
+    It also returns a countries list, which includes allies info
+
+And my favorite...
+https://www.erepublik.com/en/main/citizen-profile-json/9528581   (where that list bit is a user profile ID)
+
+
+Possibly others...
+
+https://economy.erepublik.com/en/main/map-search
+
+https://erepublik.net/images/modules/maps/elements
+
+https://economy.erepublik.net/css/cmp/
+
+https://economy.erepublik.net/js/
+
+
+potential Scrapy (HTML/beautifulsoup) targets?...
+
+https://www.erepublik.com/en/main/rankings-countries
+
+https://www.erepublik.com/en/country/economy/United-Kingdom   (or other country name)
+
+https://www.erepublik.com/en/country/society/United-Kingdom   (this lists the regions)
+
+https://www.erepublik.com/en/main/region/East-Midlands  (this lists cities)
+
+https://www.erepublik.com/en/main/city/Nottingham/overview  (this lists demographics about the city)
+
+https://www.erepublik.com/en/main/city/Nottingham/residents
+(This lists the residents of the city in a popup but I am not seeing the resident IDs in the page source yet.
+ The display is handled using a dynamic Angular binding, so the info I want doesn't show up in the source code.)
+
+
     TODO List --
 
     - Explore use of the erepublik pypi library
         - Its connect, citizen.profile and possibly utils.send_mail functions look interesting
+        - Too convoluted for me and produces lots of logs, expects to be managing bots.
+        - Maybe go back to study some of the code, but don't import it.
 
     - Include an app/db/credentials set-up method.
 
@@ -31,7 +77,7 @@
               See: https://arcade.academy/
         - Browser-based: Flask, Tornado + JavaScript (sure, but later)
 
-        - I will stick with Tk and Pygame for now.
+        - I will stick with Tk for now.
 
     - Consider tools interesting visualizations of analytical data:
         - pymunk: 2D Physics/movement library https://pypi.org/project/pymunk/
@@ -46,6 +92,7 @@
         - plotly, matplotlib, Seaborn, GGplot, Bokeh, Altair, Pygal, Geoplotlib
             - all are good, potentially useful
             - geoplotlib seems especially interesting
+        - For JavaScript, D3 is the thing. It is kind of complex, but very powerful.
 
     - Provide an interface for setting/storing credentials in encrypted format
         - Provide an interface for removing credentials from db too
@@ -70,6 +117,9 @@
     - Provide analytical functions
         - Consider time-series as well as snapshots
 
+    - Focus on "citizen" data. Don't call its "friends".
+        - Mark rows that are friends of the user as "friends" tho.
+
 ## Logging configuration
 
 =========================================================
@@ -93,6 +143,11 @@ For now, let's just provide a "DB management" interface so user can
 =========================
 
 Consider wiping eRep-related cookies before/after connecting, disconnecting
+Shouln't really need to do this since I am not running thru a browser.
+Do want to be careful about:
+
+- Making too many calls too quickly.
+- Making too many failed login attempts.
 
 ## Encryption keys and tags
 
@@ -208,7 +263,6 @@ class CitizenMedia(BaseCitizen):
         """
 
 Save a copy of the full user profile in a log file once it is retrieved successfully.
-Tag it with the user login email.
 Then if we subsequently get a response code 200 when trying to log in, use the backed-up copy instead.
 Generally speaking, we only need to log into erep during initial set up and when refreshing the friends list.
 Still not sure why sometimes I get a 200. If am understanding the "good" 302 vs. the "bad" 200,

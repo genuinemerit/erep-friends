@@ -127,6 +127,40 @@ class Utils(object):
         return plural
 
     @classmethod
+    def make_namedtuple(cls,
+                        p_name: str, 
+                        p_dict: dict) -> namedtuple:
+        """Convert dict to namedtuple.
+
+        Args:
+            p_name (str): name to assign to the tuple
+            p_dict (dict): keys and value
+
+        Returns:
+            namedtuple
+        """
+        p_name = namedtuple(p_name, sorted(p_dict.keys()))
+        return p_name(**p_dict)
+
+    @classmethod
+    def make_dict(cls,
+                  p_keys: list,
+                  p_tuple: namedtuple) -> dict:
+        """Convert namedtuple to dict.
+
+        Args:
+            p_keys (list): names of values in tuple
+            p_tuple (namedtuple)
+
+        Returns:
+            dict
+        """
+        data_rec = dict()
+        for cnm in p_keys:
+            data_rec[cnm] = copy(getattr(p_tuple, cnm))
+        return data_rec
+
+    @classmethod
     def run_cmd(cls, p_cmd: list) -> tuple:
         """Execute a shell command.
 

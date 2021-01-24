@@ -82,18 +82,18 @@ class Structs(object):
             """Get column names."""
             return list(Structs.MsgLevel.__dataclass_fields__.keys())
 
-# DATA STRUCTURES -- Database tables
+# DATA STRUCTURES -- Database Schema
 
     @dataclass
     class AuditFields:
         """Define audit columns used on all tables."""
 
+        uid: str = None
         hash_id: str = None
         pid: str = None
         create_ts: str = None
         update_ts: str = None
         delete_ts: str = None
-        is_encrypted: str = None
 
         def keys():
             """Get column names."""
@@ -118,58 +118,67 @@ class Structs(object):
         arcv_db_path: str = None
         arcv_db: str = None
 
-        w_app_ttl: str = 'eRepublik Friends Analysis'
-        w_cfg_ttl: str = 'eRepublik Friends Configuration'
-        w_connect_ttl: str = 'eRepublik Connections'
-        w_m_file: str = 'File'
-        w_m_save: str = 'Save'
-        w_m_close: str = 'Close'
-        w_m_quit: str = 'Exit'
-        w_m_win: str = 'Windows'
-        w_m_cfg: str = 'Configure'
-        w_m_connect: str = 'Connect'
-        w_m_help: str = 'Help'
-        w_m_docs: str = 'User Guide'
-        w_m_about: str = 'About'
-
-        w_m_cfg_lbl: str = 'Enter configuration choices,' +\
-                           'then select File-->Save'
-        w_m_logs: str = 'Log location'
-        w_m_log_level: str = 'Log level'
-        w_m_logs_btn: str = 'Select log path'
-        w_m_bkups: str = 'Backup DBs location'
-        w_m_bkups_btn: str = 'Select DB backups path'
-        w_m_email: str = 'eRep Email Login'
-        w_m_passw: str = 'eRep Password'
-
-        w_m_connect_lbl: str = 'Press button to verify credentials.' +\
-                               ' Then press button to refresh user profile.'
-        w_m_creds: str = 'Verify eRep credentials: '
-        w_m_creds_btn: str = 'POST Login'
-        w_m_profile: str = 'Refresh eRep profile data: '
-        w_m_profile_btn: str = 'GET Data'
-
-        w_b_pick_file: str = "Select a file"
-        w_b_set_log_path: str = "Set Log Path"
-        w_b_set_dbkup_path: str = "Set DB Backup Path"
-
-        w_m_info_ttl: str = "Information"
-        w_m_warn_ttl: str = "Warning"
-        w_m_error_ttl: str = "Error"
-        w_m_log_data: str = "Log information updated."
-        w_m_logging_on: str = "Loggging turned on."
-        w_m_bkup_data: str = "DB backup data updated."
-        w_m_bkups_on: str = "Backup and Archive databases enabled."
-        w_m_user: str = "User verified."
-        w_m_user_data: str = "User credentials and profile stored."
-
-        w_connected: str = 'Login to eRepublik verified'
-        w_login_failed: str = 'eRep login failed. Please review credentials'
-        w_greet: str = 'Greetings, [user]!'
-
         def keys():
             """Get column names."""
             return list(Structs.ConfigFields.__dataclass_fields__.keys())
+
+    @dataclass
+    class TextFields:
+        """Define static text items."""
+
+        app_ttl: str = 'eRepublik Citizens Analysis'
+        cfg_ttl: str = 'ErepFriends Configuration'
+        connect_ttl: str = 'eRepublik Connections'
+        m_file: str = 'File'
+        m_save: str = 'Save'
+        m_close: str = 'Close'
+        m_quit: str = 'Exit'
+        m_win: str = 'Windows'
+        m_cfg: str = 'Configure'
+        m_connect: str = 'Connect'
+        m_help: str = 'Help'
+        m_docs: str = 'User Guide'
+        m_about: str = 'About'
+
+        m_cfg_lbl: str = 'Enter configuration choices,' +\
+                           'then select File-->Save'
+        m_logs: str = 'Log location'
+        m_log_level: str = 'Log level'
+        m_logs_btn: str = 'Select log path'
+        m_bkups: str = 'Backup DBs location'
+        m_bkups_btn: str = 'Select DB backups path'
+        m_email: str = 'eRep Email Login'
+        m_passw: str = 'eRep Password'
+        m_apikey: str = 'eRep Tools API Key'
+
+        m_connect_lbl: str = 'Press button to verify credentials.' +\
+                               ' Then press button to refresh user profile.'
+        m_creds: str = 'Verify eRep credentials: '
+        m_creds_btn: str = 'POST Login'
+        m_profile: str = 'Refresh eRep profile data: '
+        m_profile_btn: str = 'GET Data'
+
+        b_pick_file: str = "Select a file"
+        b_set_log_path: str = "Set Log Path"
+        b_set_dbkup_path: str = "Set DB Backup Path"
+
+        m_info_ttl: str = "Information"
+        m_warn_ttl: str = "Warning"
+        m_error_ttl: str = "Error"
+        m_log_data: str = "Log information updated."
+        m_logging_on: str = "Loggging turned on."
+        m_bkup_data: str = "DB backup data updated."
+        m_bkups_on: str = "Backup and Archive databases enabled."
+        m_user: str = "User verified."
+        m_user_data: str = "User credentials and profile stored."
+
+        connected: str = 'Login to eRepublik verified'
+        login_failed: str = 'eRep login failed. Please review credentials'
+        greet: str = 'Greetings, [user]!'
+
+        def keys():
+            """Get column names."""
+            return list(Structs.TextFields.__dataclass_fields__.keys())
 
     @dataclass
     class UserFields:
@@ -178,7 +187,7 @@ class Structs(object):
         user_erep_profile_id: str = None
         user_erep_email: str = None
         user_erep_password: str = None
-        encrypt_all: str = None
+        user_tools_api_key: str = None
         encrypt_key: str = None
 
         def keys():
@@ -186,8 +195,8 @@ class Structs(object):
             return list(Structs.UserFields.__dataclass_fields__.keys())
 
     @dataclass
-    class FriendsFields:
-        """Define non-audit columns on friends table."""
+    class CitizenFields:
+        """Define non-audit columns on citizens table."""
 
         profile_id: str = None
         name: str = None
@@ -226,4 +235,4 @@ class Structs(object):
 
         def keys():
             """Get column names."""
-            return list(Structs.FriendsFields.__dataclass_fields__.keys())
+            return list(Structs.CitizenFields.__dataclass_fields__.keys())

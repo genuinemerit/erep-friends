@@ -2,7 +2,7 @@
 #!/usr/bin/python3  # noqa: E265
 
 """
-Manage eRepublik friends data and rules.
+Manage eRepFriends app data and rules.
 
 Module:    controls.py
 Class:     Controls/0  inherits object
@@ -73,52 +73,69 @@ class Controls(object):
         DB.config_main_db()
         if not Path(ST.ConfigFields.main_db).exists():
             DB.create_tables()
+            txt_rec = dict()
+            for cnm in ST.TextFields.keys():
+                txt_rec[cnm] = copy(getattr(ST.TextFields, cnm))
+            DB.write_db('add', 'texts', txt_rec)
             cfg_rec = dict()
             for cnm in ST.ConfigFields.keys():
                 cfg_rec[cnm] = copy(getattr(ST.ConfigFields, cnm))
             DB.write_db('add', 'config', cfg_rec)
         return ST
 
-    def get_config_data(self):
-        """Query data base for most current config record
+    def convert_data_record(self,
+                            p_data_rows: dict) -> tuple:
+        """Return False if no data was recovered from DB
+
+        And convert dictionaries to named tuples. In this
+        class, we only ever expect to have a single row of
+        data returned, so we use namedtuples to make reading
+        the code a little easier.
+
+        Args:
+            p_data_rows (dict): with "data" and "audit" dicts
 
         Returns:
-            object  or  bool: False if no result,
-                              else dict of "data" and "audit" dataclasses
+            tuple:  (None, None) if no results, else
+                    (aud, dat) namedtuples
+                        that mirror relevant dataclasses/tables
         """
-        data_rows = DB.query_config()
-        if len(data_rows) < 1:
-            return False
+        if p_data_rows is None or len(p_data_rows) < 1:
+            return (None, None)
         else:
-            return data_rows
+            dat = UT.make_namedtuple("dat", p_data_rows["data"])
+            aud = UT.make_namedtuple("aud", p_data_rows["audit"])
+            return (dat, aud)
+
+    def get_text_data(self):
+        """Query data base for most current texts record."""
+        return self.convert_data_record(DB.query_texts())
+
+    def get_config_data(self):
+        """Query data base for most current config record."""
+        return self.convert_data_record(DB.query_config())
 
     def get_database_user_data(self):
-        """Query data base for most current user record, decrypted
-
-        Returns:
-            object  or  bool: False if no result,
-                              else dict of "data" and "audit" dataclasses
-        """
-        data_rows = DB.query_user(p_decrypt=True)
-        if len(data_rows) < 1:
-            return False
-        else:
-            return data_rows
+        """Query data base for most current user record, decrypted."""
+        return self.convert_data_record(DB.query_user())
 
     def enable_logging(self):
         """Assign log file location. Instantiate Logger object."""
-        cfg_rec = self.get_config_data()
-        self.logme = False\
-            if cfg_rec["data"].log_level == ST.LogLevel.NOTSET\
-            else True
-        log_file = path.join(cfg_rec["data"].log_path,
-                             cfg_rec["data"].log_name)
-        self.LOG = Logger(log_file, cfg_rec["data"].log_level)
-        self.LOG.set_log()
-        if self.logme:
+        cfd, _ = self.get_config_data()
+
+        pp(("cfd", cfd))
+        pp(("cfd.log_level", cfd.log_level))
+
+        self.logme = False
+        if cfd.log_level not in (None, "None")\
+        and cfd.log_level != ST.LogLevel.NOTSET:
+            self.logme = True
+            log_file = path.join(cfd.log_path, cfd.log_name)
+            self.LOG = Logger(log_file, cfd.log_level)
+            self.LOG.set_log()
             msg = "Log file location: {}".format(log_file)
             self.LOG.write_log(ST.LogLevel.INFO, msg)
-            msg = "Log level: {}".format(cfg_rec["data"].log_level)
+            msg = "Log level: {}".format(cfd.log_level)
             self.LOG.write_log(ST.LogLevel.INFO, msg)
 
     def configure_log(self,
@@ -130,72 +147,68 @@ class Controls(object):
             p_log_path (string) path to parent dir of log file
             p_log_level (string) valid key to ST.LogLevel
 
-        @DEV - either add a flag or (better) identify condition that
-               indicates logging has been configured and turned on or not
+        Returns:
+            bool: True if logging successfully turned on, else False
         """
         self.logme = False
+        cfd, cfa = self.get_config_data()
         if p_log_path and p_log_path not in (None, "None"):
-            log_path = path.abspath(path.realpath(p_log_path))
-            if not Path(log_path).exists():
-                msg = "Log file path does not exist." +\
-                    "\nUser must create directory or pick a valid one."
-                raise Exception(IOError, msg)
-            log_level = p_log_level
-            if log_level not in ST.LogLevel.keys():
-                msg = "Log level must be one of: " + str(ST.LogLevel.keys)
-                raise Exception(ValueError, msg)
-            cfgr = self.get_config_data()
-            if not cfgr:
-                msg = "System not initialized properly. " +\
-                    "Delete DB file and restart."
-                raise Exception(ValueError, msg)
-            mod_rec = dict()
-            for cnm in ST.ConfigFields.keys():
-                mod_rec[cnm] = copy(getattr(cfgr["data"], cnm))
-                mod_rec["log_path"] = log_path
-                mod_rec["log_level"] = log_level
-            DB.write_db('upd', 'config', mod_rec, cfgr["audit"].pid)
-            cfgr = self.get_config_data()
-            if cfgr["data"].log_path\
-            and cfgr["data"].log_path not in (None, "None"):
-                self.enable_logging()
+            log_path = p_log_path if p_log_path != cfd.log_path\
+                else cfd.log_path
+        if p_log_level and p_log_level not in (None, "None"):
+            log_level = p_log_level if p_log_level != cfd.log_level\
+                else cfd.log_level
+        log_path = path.abspath(path.realpath(log_path))
+        if not Path(log_path).exists():
+            msg = "Log file path does not exist." +\
+                "\nUser must create directory or pick a valid one."
+            raise Exception(IOError, msg)
+        if log_level not in ST.LogLevel.keys():
+            msg = "Log level must be one of: " + str(ST.LogLevel.keys)
+            raise Exception(ValueError, msg)
+        data_rec = dict()
+        for cnm in ST.ConfigFields.keys():
+            if cnm == "log_path":
+                data_rec[cnm] = log_path
+            elif cnm == "log_level":
+                data_rec[cnm] = log_level
+            else:
+                data_rec[cnm] = copy(getattr(cfd, cnm))
+        DB.write_db('upd', 'config', data_rec, cfa.pid)
+        self.enable_logging()
+        return self.logme
 
-    def configure_backups(self,
-                          p_bkup_db_path: str):
+    def configure_backups(self, p_bkup_db_path: str):
         """Set location of backup and archive databases. Initialize them.
 
         Args:
             p_bkup_db_path (string) path to parent dir of db backup files
         """
-        bkup_db_path, arcv_db_path, bkup_db, arcv_db =\
-            DB.config_bkup_db(p_bkup_db_path)
-        cfgr = self.get_config_data()
-        if not cfgr:
-            msg = "System not initialized properly. " +\
-                  "Delete DB file and restart."
-            raise Exception(ValueError, msg)
-        cfg_rec = dict()
-        for cnm in ST.ConfigFields.keys():
-            cfg_rec[cnm] = copy(getattr(cfgr["data"], cnm))
-        cfg_rec["bkup_db_path"] = bkup_db_path
-        cfg_rec["bkup_db"] = bkup_db
-        cfg_rec["arcv_db_path"] = arcv_db_path
-        cfg_rec["arcv_db"] = arcv_db
-        DB.write_db('upd', 'config', cfg_rec, cfgr["audit"].pid)
+        cfd, cfa = self.get_config_data()
+        bkup_db_path, bkup_db = DB.config_bkup_db(p_bkup_db_path)
+        data_rec = UT.make_dict(ST.ConfigFields.keys(), cfd)
+        data_rec["bkup_db_path"] = bkup_db_path
+        data_rec["bkup_db"] = bkup_db
+        data_rec["arcv_db_path"] = bkup_db_path
+        data_rec["arcv_db"] = bkup_db
+        DB.write_db('upd', 'config', data_rec, cfa.pid)
         DB.backup_db()
-        DB.archive_db()
 
-    def logout_erep(self):
+    def logout_erep(self,
+                    p_cfd: namedtuple):
         """Logout from eRepublik.
 
         Kind of guessing here. A 302 (redirect) response seems good.
         Redirecting to splash page probably.
+
+        Args:
+            p_cfd (namedtuple): data info from configs table
         """
         if self.erep_csrf_token is not None:
             formdata = {'_token': self.erep_csrf_token,
                         "remember": '1',
                         'commit': 'Logout'}
-            response = self.erep_rqst.post(self.cfgd["data"].erep_url + "/logout",
+            response = self.erep_rqst.post(p_cfd.erep_url + "/logout",
                                            data=formdata,
                                            allow_redirects=True)
             if self.logme:
@@ -203,7 +216,7 @@ class Controls(object):
                 self.LOG.write_log(ST.LogLevel.INFO, msg)
             if response.status_code == 302:
                 self.erep_csrf_token = None
-                response = self.erep_rqst.get(self.cfgd["data"].erep_url)
+                response = self.erep_rqst.get(p_cfd.erep_url)
                 if self.logme:
                     msg = "Logout response/redirect text: " + response.text
                     self.LOG.write_log(ST.LogLevel.INFO, msg)
@@ -218,11 +231,14 @@ class Controls(object):
         parse_text = parse_text[1].split("';")
         self.erep_csrf_token = parse_text[0]
 
-    def get_basic_user_info(self, response_text: str):
+    def parse_user_info(self,
+                        response_text: str,
+                        p_cfd: namedtuple) -> namedtuple:
         """Extract ID and name from response text.
 
         Args:
             response_text (string): full response text from eRep login GET
+            p_cfd (namedtuple): data info from configs table
 
         Returns:
             namedtuple: (id_info: profile_id, user_name)
@@ -236,20 +252,24 @@ class Controls(object):
         parse_text = response_text.split('"name":')
         parse_text = parse_text[1].split(",")
         id_info.user_name = parse_text[0].replace('"', '')
-        if self.logme and self.cfgd["data"].log_level == 'DEBUG':
+        if self.logme and p_cfd.log_level == 'DEBUG':
             msg = "CSRF Token:\t{}".format(self.erep_csrf_token)
             self.LOG.write_log(ST.LogLevel.INFO, msg)
             msg = "Login response:\n{}".format(response_text)
             self.LOG.write_log(ST.LogLevel.INFO, msg)
         return id_info
 
-    def get_local_login_file(self):
+    def get_local_login_file(self,
+                             p_cfd: dict) -> str:
         """Use local copy of login response if available.
+
+        Args:
+            p_cfd (dict): data info from config table
 
         Returns:
             text or bool: full response.text from eRep login GET  or  False
         """
-        login_file = path.abspath(path.join(self.cfgd["data"].log_path,
+        login_file = path.abspath(path.join(p_cfd.log_path,
                                             "login_response"))
         response_text = False
         if Path(login_file).exists():
@@ -258,7 +278,7 @@ class Controls(object):
                 lf.close()
         return response_text
 
-    def login_erep(self,
+    def verify_citizen_credentials(self,
                    p_email: str,
                    p_password: str,
                    p_use_response_file: bool) -> str:
@@ -273,13 +293,13 @@ class Controls(object):
         Returns:
             text: full response.text from eRep login GET  or  None
         """
-        self.cfgd = self.get_config_data()
-        self.logout_erep()
+        cfd, _ = self.get_config_data()
+        self.logout_erep(cfd)
         time.sleep(.300)
 
         response_text = False
         if p_use_response_file:
-            response_text = self.get_local_login_file()
+            response_text = self.get_local_login_file(cfd)
             if response_text:
                 if self.logme:
                     msg = "Using cached login data for credentials"
@@ -288,7 +308,7 @@ class Controls(object):
             formdata = {'citizen_email': p_email,
                         'citizen_password': p_password,
                         "remember": '1', 'commit': 'Login'}
-            login_url = self.cfgd["data"].erep_url + "/login"
+            login_url = cfd.erep_url + "/login"
             response = self.erep_rqst.post(login_url,
                                            data=formdata,
                                            allow_redirects=False)
@@ -296,25 +316,26 @@ class Controls(object):
                 msg = "Login status code: {}".format(response.status_code)
                 self.LOG.write_log(ST.LogLevel.INFO, msg)
             if response.status_code == 302:
-                response = self.erep_rqst.get(self.cfgd["data"].erep_url)
+                response = self.erep_rqst.get(cfd.erep_url)
                 self.get_token(response.text)
                 response_text = response.text
                 if p_use_response_file:
-                    with open(path.abspath(path.join(self.cfgd["data"].log_path,
+                    with open(path.abspath(path.join(cfd.log_path,
                               "login_response")), "w") as f:
                         f.write(response.text)
             else:
                 msg = "Login connection failed. See response text in log." +\
                     "\n Probably a captcha. May want to wait a few hours."
                 raise Exception(ConnectionError, msg)
-        id_info = self.get_basic_user_info(response_text)
-        self.logout_erep()
+        id_info = self.parse_user_info(response_text, cfd)
+        self.logout_erep(cfd)
         return id_info
 
     def close_controls(self):
         """Close connections. Close the log."""
         if self.erep_csrf_token is not None:
-            self.logout_erep()
+            cfd, _ = self.get_config_data()
+            self.logout_erep(cfd)
         try:
             self.LOG.close_logs()
         except Exception:
@@ -340,158 +361,163 @@ class Controls(object):
 
     def get_basic_citizen_profile(self,
                                   profile_data: dict,
-                                  p_frec: dict) -> dict:
+                                  p_citrec: dict) -> dict:
         """Extract basic citizen data from profile response.
 
         Args:
             profile_data (dict): returned from eRep
-            p_frec (dict): mirrors ST.FriendsFields
+            p_citrec (dict): mirrors ST.CitizenFields
 
         Returns:
-            dict: updated p_frec
+            dict: updated p_citrec
         """
-        frec = p_frec
-        frec["name"] = profile_data["citizen"]["name"]
-        frec["is_alive"] =\
+        citrec = p_citrec
+        citrec["name"] = profile_data["citizen"]["name"]
+        citrec["is_alive"] =\
             self.convert_val(profile_data["citizen"]["is_alive"])
-        frec["is_adult"] = self.convert_val(profile_data["isAdult"])
-        frec["avatar_link"] = self.convert_val(profile_data["citizen"]["avatar"])
-        frec["level"] =\
+        citrec["is_adult"] = self.convert_val(profile_data["isAdult"])
+        citrec["avatar_link"] = self.convert_val(profile_data["citizen"]["avatar"])
+        citrec["level"] =\
             self.convert_val(profile_data["citizen"]["level"])
-        frec["xp"] =\
+        citrec["xp"] =\
             self.convert_val(
                 profile_data["citizenAttributes"]["experience_points"])
-        frec["friends_count"] =\
+        citrec["friends_count"] =\
             self.convert_val(profile_data["friends"]["number"])
-        frec["achievements_count"] =\
+        citrec["achievements_count"] =\
             self.convert_val(len(profile_data["achievements"]))
-        frec["is_in_congress"] =\
+        citrec["is_in_congress"] =\
             self.convert_val(profile_data['isCongressman'])
-        frec["is_ambassador"] = self.convert_val(profile_data['isAmbassador'])
-        frec["is_dictator"] = self.convert_val(profile_data['isDictator'])
-        frec["is_country_president"] =\
+        citrec["is_ambassador"] = self.convert_val(profile_data['isAmbassador'])
+        citrec["is_dictator"] = self.convert_val(profile_data['isDictator'])
+        citrec["is_country_president"] =\
             self.convert_val(profile_data['isPresident'])
-        frec["is_top_player"] = self.convert_val(profile_data['isTopPlayer'])
-        frec["is_party_member"] = self.convert_val(profile_data["isPartyMember"])
-        frec["is_party_president"] =\
+        citrec["is_top_player"] = self.convert_val(profile_data['isTopPlayer'])
+        citrec["is_party_member"] = self.convert_val(profile_data["isPartyMember"])
+        citrec["is_party_president"] =\
             self.convert_val(profile_data["isPartyPresident"])
-        return frec
+        return citrec
 
     def get_citizen_location_data(self,
                                   profile_data: dict,
-                                  p_frec: dict) -> dict:
+                                  p_citrec: dict) -> dict:
         """Extract citizen location data from profile response.
 
         Args:
             profile_data (dict): returned from eRep
-            p_frec (dict): mirrors ST.FriendsFields
+            p_citrec (dict): mirrors ST.CitizenFields
 
         Returns:
-            dict: updated p_frec
+            dict: updated p_citrec
         """
-        frec = p_frec
-        frec["citizenship_country"] =\
+        citrec = p_citrec
+        citrec["citizenship_country"] =\
             self.convert_val(
                 profile_data["location"]["citizenshipCountry"]["name"])
         if "city" in profile_data.keys():
-            frec["residence_city"] = self.convert_val(
+            citrec["residence_city"] = self.convert_val(
                 profile_data["city"]["residenceCity"]["name"])
-            frec["residence_region"] = self.convert_val(
+            citrec["residence_region"] = self.convert_val(
                 profile_data["city"]["residenceCity"]["region_name"])
-            frec["residence_country"] = self.convert_val(
+            citrec["residence_country"] = self.convert_val(
                 profile_data["city"]["residenceCity"]["country_name"])
-        return frec
+        return citrec
 
     def get_citizen_party_data(self,
                                profile_data: dict,
-                               p_frec: dict) -> dict:
+                               p_citrec: dict,
+                               p_cfd: namedtuple) -> dict:
         """Extract citizen party data from profile response.
 
         Args:
             profile_data (dict): returned from eRep
-            p_frec (dict): mirrors ST.FriendsFields
+            p_citrec (dict): mirrors ST.CitizenFields
+            p_cfd (namedtuple): data from configs table
 
         Returns:
-            dict: updated p_frec
+            dict: updated p_citrec
         """
-        frec = p_frec
+        citrec = copy(p_citrec)
         if "partyData" in profile_data.keys()\
           and profile_data["partyData"] != []\
           and not isinstance(profile_data["partyData"], bool)\
           and not isinstance(profile_data["partyData"], str):
-            frec["party_name"] =\
+            citrec["party_name"] =\
                 self.convert_val(profile_data["partyData"]["name"])
-            frec["party_avatar_link"] = self.convert_val(
+            citrec["party_avatar_link"] = self.convert_val(
                 "https:" + profile_data["partyData"]["avatar"])
-            frec["party_orientation"] = self.convert_val(
+            citrec["party_orientation"] = self.convert_val(
                 profile_data["partyData"]["economical_orientation"])
-            frec["party_url"] = self.convert_val(
-                self.cfgd["data"].erep_url + "/party/" +\
+            citrec["party_url"] = self.convert_val(
+                p_cfd.erep_url + "/party/" +\
                 str(profile_data["partyData"]["stripped_title"]) + "-" +\
                 str(profile_data["partyData"]["id"]) + "/1")
-        return frec
+        return citrec
 
     def get_citizen_military_data(self,
                                   profile_data: dict,
-                                  p_frec: dict) -> dict:
+                                  p_citrec: dict,
+                                  p_cfd: namedtuple) -> dict:
         """Extract citizen military data from profile response.
 
         Args:
             profile_data (dict): returned from eRep
-            p_frec (dict): mirrors ST.FriendsFields
+            p_citrec (dict): mirrors ST.CitizenFields
+            p_cfd (namedtuple): data from configs table
 
         Returns:
-            dict: updated p_frec
+            dict: updated p_citrec
         """
-        frec = p_frec
+        citrec = copy(p_citrec)
         if not isinstance(profile_data["military"], bool)\
           and not isinstance(profile_data["military"]["militaryData"], bool):
-            frec["aircraft_rank"] = self.convert_val(
+            citrec["aircraft_rank"] = self.convert_val(
                 profile_data['military']['militaryData']["aircraft"]["name"])
-            frec["ground_rank"] = self.convert_val(
+            citrec["ground_rank"] = self.convert_val(
                 profile_data['military']['militaryData']["ground"]["name"])
         if "militaryUnit" in profile_data["military"].keys()\
           and not isinstance(profile_data["military"], bool)\
           and not isinstance(profile_data["military"]["militaryUnit"], bool):
-            frec["militia_name"] = self.convert_val(
+            citrec["militia_name"] = self.convert_val(
                 profile_data['military']['militaryUnit']['name'])
-            frec["military_rank"] = self.convert_val(
+            citrec["military_rank"] = self.convert_val(
                 profile_data['military']['militaryUnit']["militaryRank"])
-            frec["militia_url"] = self.convert_val(
-                self.cfgd["data"].erep_url +\
-                "/military/military-unit/" +\
+            citrec["militia_url"] = self.convert_val(
+                p_cfd.erep_url + "/military/military-unit/" +\
                 str(profile_data['military']['militaryUnit']['id']) +\
                 "/overview")
-            frec["militia_size"] = self.convert_val(
+            citrec["militia_size"] = self.convert_val(
                 profile_data['military']['militaryUnit']['member_count'])
-            frec["militia_avatar_link"] = self.convert_val(
+            citrec["militia_avatar_link"] = self.convert_val(
                 "https:" + profile_data['military']['militaryUnit']["avatar"])
-        return frec
+        return citrec
 
     def get_citizen_press_data(self,
                                profile_data: dict,
-                               p_frec: dict) -> dict:
+                               p_citrec: dict,
+                               p_cfd: namedtuple) -> dict:
         """Extract citizen presss data from profile response.
 
         Args:
             profile_data (dict): returned from eRep
-            p_frec (dict): mirrors ST.FriendsFields
+            p_citrec (dict): mirrors ST.CitizenFields
+            p_cfd (namedtuple): data and audit from configs table
 
         Returns:
-            dict: updated p_frec
+            dict: updated p_citrec
         """
-        frec = p_frec
+        citrec = p_citrec
         if "newspaper" in profile_data.keys()\
           and not isinstance(profile_data['newspaper'], bool):
-            frec["newspaper_name"] = self.convert_val(
+            citrec["newspaper_name"] = self.convert_val(
                 profile_data['newspaper']['name'])
-            frec["newspaper_avatar_link"] = self.convert_val(
+            citrec["newspaper_avatar_link"] = self.convert_val(
                 "https:" + profile_data['newspaper']["avatar"])
-            frec["newspaper_url"] = self.convert_val(
-                self.cfgd["data"].erep_url + "/main/newspaper/" +\
+            citrec["newspaper_url"] = self.convert_val(
+                p_cfd.erep_url + "/main/newspaper/" +\
                 str(profile_data['newspaper']["stripped_title"]) + "-" +\
                 str(profile_data['newspaper']["id"]) + "/1")
-        return frec
+        return citrec
 
     def get_citizen_profile(self,
                             p_profile_id: str,
@@ -510,14 +536,14 @@ class Controls(object):
             ValueError if profile ID returns 404 from eRepublik
 
         Returns:
-            dict: modeled on ST.FriendsFields dataclass
+            dict: modeled on ST.CitizenFields dataclass
         """
-        frec = dict()
-        for cnm in ST.FriendsFields.keys():
-            frec[cnm] = str(copy(getattr(ST.FriendsFields, cnm)))
+        cfd, _ = self.get_config_data()
+        citrec = dict()
+        for cnm in ST.CitizenFields.keys():
+            citrec[cnm] = copy(getattr(ST.CitizenFields, cnm))
         file_nm = "profile_response_{}".format(p_profile_id)
-        profile_file = path.abspath(path.join(self.cfgd["data"].log_path,
-                                    file_nm))
+        profile_file = path.abspath(path.join(cfd.log_path, file_nm))
         if Path(profile_file).exists() and p_use_file:
             with open(profile_file) as pf:
                 profile_data = json.loads(pf.read())
@@ -526,11 +552,11 @@ class Controls(object):
                 msg += "profile data read from file"
                 self.LOG.write_log(ST.LogLevel.DEBUG, msg)
         else:
-            profile_url = self.cfgd["data"].erep_url +\
+            profile_url = cfd.erep_url +\
                 "/main/citizen-profile-json/" + p_profile_id
             response = requests.get(profile_url)
             if response.status_code == 404:
-                msg = "Invalid eRepublik Profile ID."
+                msg = "Invalid eRepublik Profile ID: {}".format(p_profile_id)
                 raise Exception(ValueError, msg)
             profile_data = json.loads(response.text)
             with open(profile_file, "w") as f:
@@ -540,23 +566,25 @@ class Controls(object):
                 msg += "profile data saved to file"
                 self.LOG.write_log(ST.LogLevel.DEBUG, msg)
 
-        frec["profile_id"] = p_profile_id
-        frec = self.get_basic_citizen_profile(profile_data, frec)
-        frec = self.get_citizen_location_data(profile_data, frec)
-        frec = self.get_citizen_party_data(profile_data, frec)
-        frec = self.get_citizen_military_data(profile_data, frec)
-        frec = self.get_citizen_press_data(profile_data, frec)
-        return frec
+        citrec["profile_id"] = p_profile_id
+        citrec = self.get_basic_citizen_profile(profile_data, citrec)
+        citrec = self.get_citizen_location_data(profile_data, citrec)
+        citrec = self.get_citizen_party_data(profile_data, citrec, cfd)
+        citrec = self.get_citizen_military_data(profile_data, citrec, cfd)
+        citrec = self.get_citizen_press_data(profile_data, citrec, cfd)
+        return citrec
 
     def write_user_rec(self, p_profile_id: str,
                              p_erep_email: str,
-                             p_erep_passw: str):
+                             p_erep_passw: str,
+                             p_erep_apikey: str):
         """Add user record to database.
 
         Args:
             p_profile_id (str): verified eRep citizen profile ID
             p_erep_email (str): verified eRep login email address
             p_erep_passw (str): verified eRep login password
+            p_erep_apikey (str): eRep Tools API key
         """
         urec = dict()
         for cnm in ST.UserFields.keys():
@@ -564,18 +592,16 @@ class Controls(object):
         urec["user_erep_profile_id"] = p_profile_id
         urec["user_erep_email"] = p_erep_email
         urec["user_erep_password"] = p_erep_passw
-        urec["encrypt_all"] = False
-        DB.write_db("add", "user", urec, p_pid=None, p_encrypt=True)
+        urec["user_tools_api_key"] = p_erep_apikey
+        DB.write_db("add", "user", urec, p_pid=None)
 
-    def write_friends_rec(self, p_frec: dict):
-        """Add friends record to database.
+    def write_citizen_rec(self, p_citrec: dict):
+        """Add citizen record to database.
 
         Args:
-            p_frec (dict): mirrors ST.FriendsFields
+            p_citrec (dict): mirrors ST.CitizenFields
         """
-        urec = self.get_database_user_data()
-        DB.write_db("add", "friends", p_frec, p_pid=None,
-                    p_encrypt=urec["data"].encrypt_all)
+        DB.write_db("add", "citizen", p_citrec, p_pid=None)
 
 # #######################################################
 
@@ -637,45 +663,13 @@ class Controls(object):
 
         for friend in friends_data:
             print("Getting profile for {} ... ".format(friend["name"]))
-            # eventually, this will be modified to return a dict:s
-            frec = self.get_citizen_profile(friend["id"])
-            friends_rec = dict()
-            for cnm in ST.FriendsRec.keys():
-                friends_rec[cnm] = copy(getattr(frec, cnm))
-            DB.write_db("add", "friends", friends_rec, None, False)
+            # eventually, modify this to return a dict
+            citrec = self.get_citizen_profile(friend["id"])
+            citizen_rec = dict()
+            for cnm in ST.CitizensFields.keys():
+                citizen_rec[cnm] = copy(getattr(citrec, cnm))
+            DB.write_db("add", "citizen", citizen_rec, None, False)
             time.sleep(.300)
-
-    def set_environment(self):
-        """Handle basic set-up as needed.
-
-        Complete necessary set-up steps before proceeding
-        """
-        self.enable_logging()
-
-        data_rows = DB.query_user(p_decrypt=True)
-        if not data_rows:
-            id_info, erep_email_id, erep_pass = self.interactive_login_erep()
-            self.logout_erep()
-            urec = dict()
-            for cnm in ST.UserFields.keys():
-                urec[cnm] = copy(getattr(ST.UserFields, cnm))
-            urec["user_erep_profile_id"] = id_info.profile_id
-            urec["user_erep_email"] = erep_email_id
-            urec["user_erep_password"] = erep_pass
-            urec["encrypt_all"] = False
-            DB.write_db("add", "user", urec, None, True)
-            frec = self.get_citizen_profile(id_info.profile_id)
-            friend_rec = dict()
-            for cnm in ST.FriendsFields.keys():
-                friend_rec[cnm] = copy(getattr(frec, cnm))
-            DB.write_db("add", "friends", friend_rec, None, False)
-            time.sleep(1)
-            self.login_erep(erep_email_id, erep_pass, False)
-            self.get_friends_data(id_info.profile_id)
-            self.logout_erep()
-        # else:
-        #    self.get_friends_data(data_rows[0]["data"].user_erep_profile_id)
-
 
     ## XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
     ##  Code imported from "erep_messenger"  ###############################
@@ -756,7 +750,6 @@ class Controls(object):
     def load_list_dialog(self):
         """
         Populate the profile ids list from a ".list" file stored in the db directory
-        @DEV - Eventually replace files with an encrypted sqlite database
         """
         if self.win_load is None:
             self.win_load = tk.Toplevel()
@@ -982,7 +975,7 @@ class Controls(object):
 
     def make_root_emsg_window(self):
         """
-        Construct the friends app window
+        Construct the ErepFriends app window
         """
         self.win_ef.title(self.cfgd["data"].w_title)
         self.win_ef.geometry('900x600+100+100')

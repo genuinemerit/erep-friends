@@ -31,28 +31,13 @@ class Views(object):
         CN.check_python_version()
         CN.set_erep_headers()
         self.ST = CN.configure_database()
-        self.cfgr = CN.get_config_data()
-        if not self.cfgr:
-            msg = "Configuration data not set up properly." +\
-                  " Delete db file and restart."
-            raise Exception(ValueError, msg)
-        else:
-            self.cfgr = self.cfgr["data"]
-        self.user = CN.get_database_user_data()
+        self.tx, _ = CN.get_text_data()
         self.set_basic_interface()
-        if not self.user\
-            or (self.cfgr.log_path is None or
-                self.cfgr.log_level is None or
-                self.cfgr.bkup_db_path is None):
-            self.make_configs_editor()
+        self.make_configs_editor()
         # Next:
-        # Integrate results of config choices into flow
         # Some simple help instructions
             # More detailed suggestions on accumulating friends
         # View log screen
-        # Modify encrypt stuff so that only user table is encrypted at the
-        #  column level. Do away with "encrypt_all" option. If that is desired,
-        #  then use sqlite facilities to do it at the file level.
         # Verifications regarding logs, log level, backups, login credentials
         # Gather friends list and populate friends table
         # Schedule, or manually trigger backups
@@ -84,13 +69,13 @@ class Views(object):
             p_menu (str): Name of the menu
             p_item (str): Name of the menu item
         """
-        if p_menu == self.cfgr.w_m_file:
-            if p_item == self.cfgr.w_m_save:
+        if p_menu == self.tx.m_file:
+            if p_item == self.tx.m_save:
                 self.file_menu.entryconfig(0, state="normal")
-            elif p_item == self.cfgr.w_m_close:
+            elif p_item == self.tx.m_close:
                 self.file_menu.entryconfig(1, state="normal")
-        elif p_menu == self.cfgr.w_m_win:
-            if p_item == self.cfgr.w_m_cfg:
+        elif p_menu == self.tx.m_win:
+            if p_item == self.tx.m_cfg:
                 self.win_menu.entryconfig(0, state="normal")
 
     def disable_menu_item(self, p_menu: str, p_item: str):
@@ -100,13 +85,13 @@ class Views(object):
             p_menu (str): Name of the menu
             p_item (str): Name of the menu item
         """
-        if p_menu == self.cfgr.w_m_file:
-            if p_item == self.cfgr.w_m_save:
+        if p_menu == self.tx.m_file:
+            if p_item == self.tx.m_save:
                 self.file_menu.entryconfig(0, state="disabled")
-            elif p_item == self.cfgr.w_m_close:
+            elif p_item == self.tx.m_close:
                 self.file_menu.entryconfig(1, state="disabled")
-        elif p_menu == self.cfgr.w_m_win:
-            if p_item == self.cfgr.w_m_cfg:
+        elif p_menu == self.tx.m_win:
+            if p_item == self.tx.m_cfg:
                 self.win_menu.entryconfig(0, state="disabled")
 
     def update_msg(self,
@@ -150,12 +135,12 @@ class Views(object):
         elif self.buffer.current_frame == "connect":
             self.connect_frame.grid_forget()
             self.connect_frame.destroy()
-        self.enable_menu_item(self.cfgr.w_m_win, self.cfgr.w_m_cfg)
-        self.enable_menu_item(self.cfgr.w_m_win, self.cfgr.w_m_connect)
-        self.disable_menu_item(self.cfgr.w_m_file, self.cfgr.w_m_close)
-        self.disable_menu_item(self.cfgr.w_m_file, self.cfgr.w_m_save)
+        self.enable_menu_item(self.tx.m_win, self.tx.m_cfg)
+        self.enable_menu_item(self.tx.m_win, self.tx.m_connect)
+        self.disable_menu_item(self.tx.m_file, self.tx.m_close)
+        self.disable_menu_item(self.tx.m_file, self.tx.m_save)
         setattr(self.buffer, 'current_frame', None)
-        self.win_root.title(self.cfgr.w_app_ttl)
+        self.win_root.title(self.tx.app_ttl)
 
     def save_log_path(self) -> tuple:
         """Handle updates to log info.
@@ -165,11 +150,12 @@ class Views(object):
         """
         log_path = str(self.log_loc.get()).strip()
         log_level = str(self.log_lvl_val.get()).strip()
-        if (log_path and log_path != self.cfgr.log_path) or\
-           (log_level != self.cfgr.log_level):
-            CN.configure_log(log_path, log_level)
-            return(self.cfgr.w_m_log_data,
-                   self.cfgr.w_m_logging_on)
+
+        pp(("log_level: ", log_level))
+
+        if CN.configure_log(log_path, log_level):
+            return(self.tx.m_log_data,
+                   self.tx.m_logging_on)
         else:
             return("", "")
 
@@ -180,10 +166,9 @@ class Views(object):
             tuple(str: brief_msg, str: detailed_msg)
         """
         bkup_db_path = str(self.bkup_loc.get()).strip()
-        if bkup_db_path != self.cfgr.bkup_db_path:
-            CN.configure_backups(bkup_db_path)
-            return(self.cfgr.w_m_bkup_data,
-                   self.cfgr.w_m_bkups_on)
+        if CN.configure_backups(bkup_db_path):
+            return(self.tx.m_bkup_data,
+                   self.tx.m_bkups_on)
         else:
             return("", "")
 
@@ -195,17 +180,21 @@ class Views(object):
         """
         erep_email = str(self.email.get()).strip()
         erep_passw = str(self.passw.get()).strip()
+        erep_apikey = str(self.apikey.get()).strip()
+        if erep_apikey:
+            # @DEV verify that it actually works
+            pass
         if erep_email and erep_passw:
-            id_info = CN.login_erep(erep_email, erep_passw, True)
-            profile_data = CN.get_citizen_profile(id_info.profile_id, True)
-            CN.write_user_rec(id_info.profile_id, erep_email, erep_passw)
-            CN.write_friends_rec(profile_data)
-            # 4. Return feedback for message to display in GUI
-            # 5. Direct user to the friends window for more processing
-            return(self.cfgr.w_m_user,
-                   self.cfgr.w_connected + "\n" +
-                   self.cfgr.w_m_user_data + "\n" +
-                   self.cfgr.w_greet.replace("[user]", id_info.user_name))
+            id_info = CN.verify_citizen_credentials(erep_email,
+                                                    erep_passw, True)
+            CN.write_user_rec(id_info.profile_id, erep_email,
+                              erep_passw, erep_apikey)
+            citzn_rec = CN.get_citizen_profile(id_info.profile_id, True)
+            CN.write_citizen_rec(citzn_rec)
+            return(self.tx.m_user,
+                   self.tx.connected + "\n" +
+                   self.tx.m_user_data + "\n" +
+                   self.tx.greet.replace("[user]", id_info.user_name))
         else:
             return("", "")
 
@@ -233,21 +222,21 @@ class Views(object):
         """Browse for a log directory."""
         dirname =\
             tk.filedialog.askdirectory(initialdir=UT.get_home(),
-                                       title=self.cfgr.w_b_set_log_path)
+                                       title=self.tx.b_set_log_path)
         self.log_loc.insert(0, dirname)
 
     def select_bkup_dir(self):
         """Browse for a backup directory."""
         dirname =\
             tk.filedialog.askdirectory(initialdir=UT.get_home(),
-                                       title=self.cfgr.w_b_set_dbkup_path)
+                                       title=self.tx.b_set_dbkup_path)
         self.bkup_loc.insert(0, dirname)
 
     def browse_file(self):
         """Browse for a selected file."""
         ftypes = (("Text files", "*.txt*"), ("all files", "*.*"))
         _ = tk.filedialog.askopenfilename(initialdir=UT.get_home(),
-                                          title=self.cfgr.w_b_pick_file,
+                                          title=self.tx.b_pick_file,
                                           filetypes=ftypes)
 
     def login_erep(self):
@@ -267,25 +256,20 @@ class Views(object):
         Refresh user's profile.
         Refresh user's friends list.
 
-        @DEV -- tweak this as follows:
-        1. Provide ability to refresh user data and user profile data,
-        but don't require it.
-        2. This screen is mainly about gathering the friends list and
-        loading the profile data for the friends list.  Should have an
-        option to:
-        2.a. Refresh the friends list (of profile IDs)
-        2.b. Refresh the friends list profile data
-        2.c. Refresh the profile data for a specific profile ID
-        2.d. Pull in profile data for a list of IDs other than the friends list
+        @DEV -- redesign as follows:
+        - Option to pull in / refresh from friends list
+        - Option to pull in / refresh a single profile ID
+        - Option to pull in / refresh from a local list of profile IDs
+        - Option to use erep tools instead of direct call to erep
 
         We'll make another screen for producing reports, visualzations.
         """
         def set_context():
             setattr(self.buffer, 'current_frame', 'connect')
-            self.win_root.title(self.cfgr.w_connect_ttl)
-            self.disable_menu_item(self.cfgr.w_m_win, self.cfgr.w_m_connect)
-            self.disable_menu_item(self.cfgr.w_m_file, self.cfgr.w_m_save)
-            self.enable_menu_item(self.cfgr.w_m_file, self.cfgr.w_m_close)
+            self.win_root.title(self.tx.connect_ttl)
+            self.disable_menu_item(self.tx.m_win, self.tx.m_connect)
+            self.disable_menu_item(self.tx.m_file, self.tx.m_save)
+            self.enable_menu_item(self.tx.m_file, self.tx.m_close)
             self.connect_frame = tk.Frame(self.win_root,
                                           width=400, padx=5, pady=5)
             self.connect_frame.grid(sticky=tk.N)
@@ -294,23 +278,23 @@ class Views(object):
 
         def set_labels():
             ttl_label = ttk.Label(self.connect_frame,
-                                  text=self.cfgr.w_m_connect_lbl)
+                                  text=self.tx.m_connect_lbl)
             ttl_label.grid(row=0, columnspan=3)
             creds_label = ttk.Label(self.connect_frame,
-                                    text=self.cfgr.w_m_creds)
+                                    text=self.tx.m_creds)
             creds_label.grid(row=1, column=0, sticky=tk.E)
             profile_label = ttk.Label(self.connect_frame,
-                                      text=self.cfgr.w_m_profile)
+                                      text=self.tx.m_profile)
             profile_label.grid(row=2, column=0, sticky=tk.E)
 
         def set_inputs():
             self.creds_btn = ttk.Button(self.connect_frame,
-                                        text=self.cfgr.w_m_creds_btn,
+                                        text=self.tx.m_creds_btn,
                                         command=self.login_erep,
                                         state=tk.NORMAL)
             self.creds_btn.grid(row=1, column=1, sticky=tk.W)
             self.profile_btn = ttk.Button(self.connect_frame,
-                                          text=self.cfgr.w_m_profile_btn,
+                                          text=self.tx.m_profile_btn,
                                           command=self.profile_user,
                                           state=tk.DISABLED)
             self.profile_btn.grid(row=2, column=1, sticky=tk.W)
@@ -321,24 +305,34 @@ class Views(object):
         set_inputs()
 
     def make_configs_editor(self):
-        """Construct frame for entering configuration info.
+        """Construct frame for entering configuration info."""
 
-        @DEV: Consider adding to this:
-        1. A checkbox or something to turn logging on or to make sure
-           logging is always turned on (or not).
-        2. Settings related to database backups.
-        3. Load values into login email and passw if user record exists.
-        4. Maybe some kind of integrated help or status indicators.
-        5. Buttons to complement the save/close File menu options.
-        """
+        def prep_data():
+            """Handle empty and None values."""
+            if cfd is not None:
+                if cfd.log_path not in (None, "None"):
+                    cf_dflt["log_loc"] = cfd.log_path
+                if cfd.log_level not in (None, "None"):
+                    cf_dflt["log_lvl"] = cfd.log_level
+                if cfd.bkup_db_path not in (None, "None"):
+                    cf_dflt["bkup_path"] = cfd.bkup_db_path
+
+            if usrd is not None:
+                if usrd.user_erep_email not in (None, "None"):
+                    usr_dflt["email"] = usrd.user_erep_email
+                if usrd.user_erep_password not in (None, "None"):
+                    usr_dflt["passw"] = usrd.user_erep_password
+                if usrd.user_tools_api_key not in (None, "None"):
+                    usr_dflt["apikey"] = usrd.user_tools_api_key
 
         def set_context():
+            """Set root and frame. Enable/disable menu items."""
             setattr(self.buffer, 'current_frame', 'config')
-            self.win_root.title(self.cfgr.w_cfg_ttl)
-            self.disable_menu_item(self.cfgr.w_m_win, self.cfgr.w_m_cfg)
-            self.disable_menu_item(self.cfgr.w_m_win, self.cfgr.w_m_connect)
-            self.enable_menu_item(self.cfgr.w_m_file, self.cfgr.w_m_save)
-            self.enable_menu_item(self.cfgr.w_m_file, self.cfgr.w_m_close)
+            self.win_root.title(self.tx.cfg_ttl)
+            self.disable_menu_item(self.tx.m_win, self.tx.m_cfg)
+            self.disable_menu_item(self.tx.m_win, self.tx.m_connect)
+            self.enable_menu_item(self.tx.m_file, self.tx.m_save)
+            self.enable_menu_item(self.tx.m_file, self.tx.m_close)
             self.cfg_frame = tk.Frame(self.win_root,
                                       width=400, padx=5, pady=5)
             self.cfg_frame.grid(sticky=tk.N)
@@ -346,62 +340,103 @@ class Views(object):
             self.win_root.grid_columnconfigure(1, weight=1)
 
         def set_labels():
-            ttl_label = ttk.Label(self.cfg_frame, text=self.cfgr.w_m_cfg_lbl)
+            """Define and assign text to data entry labels."""
+            ttl_label = ttk.Label(self.cfg_frame, text=self.tx.m_cfg_lbl)
             ttl_label.grid(row=0, columnspan=3)
-            log_label = ttk.Label(self.cfg_frame, text=self.cfgr.w_m_logs)
+            log_label = ttk.Label(self.cfg_frame, text=self.tx.m_logs)
             log_label.grid(row=1, column=0, sticky=tk.E)
             loglvl_label = ttk.Label(self.cfg_frame,
-                                     text=self.cfgr.w_m_log_level)
+                                     text=self.tx.m_log_level)
             loglvl_label.grid(row=2, column=0, sticky=tk.E)
-            bkup_label = ttk.Label(self.cfg_frame, text=self.cfgr.w_m_bkups)
+            bkup_label = ttk.Label(self.cfg_frame, text=self.tx.m_bkups)
             bkup_label.grid(row=3, column=0, sticky=tk.E)
-            email_label = ttk.Label(self.cfg_frame, text=self.cfgr.w_m_email)
+            email_label = ttk.Label(self.cfg_frame, text=self.tx.m_email)
             email_label.grid(row=4, column=0, sticky=tk.E)
-            passw_label = ttk.Label(self.cfg_frame, text=self.cfgr.w_m_passw)
-            passw_label.grid(row=5, column=0, sticky=tk.E)
+            passlabel = ttk.Label(self.cfg_frame, text=self.tx.m_passw)
+            passlabel.grid(row=5, column=0, sticky=tk.E)
+            apikey_label = ttk.Label(self.cfg_frame, text=self.tx.m_apikey)
+            apikey_label.grid(row=6, column=0, sticky=tk.E)
 
         def set_inputs():
-            self.log_loc = ttk.Entry(self.cfg_frame, width=50)
-            if self.cfgr.log_path:
-                # Man, tikinter has some funky stuff...
-                # Define a tk string, then set its value, then get its value.
-                # Sheesh...
+            """Define and assign defaults to data input widgets."""
+
+            def set_log_loc_input():
+                """Log location."""
+                self.log_loc = ttk.Entry(self.cfg_frame, width=50)
                 log_path_val = tk.StringVar(self.cfg_frame)
-                log_path_val.set(self.cfgr.log_path)
+                log_path_val.set(cf_dflt["log_loc"])
                 self.log_loc.insert(0, log_path_val.get())
-            self.log_loc.grid(row=1, column=1, sticky=tk.W)
-            self.log_loc_btn = ttk.Button(self.cfg_frame,
-                                          text=self.cfgr.w_m_logs_btn,
-                                          command=self.select_log_dir)
-            self.log_loc_btn.grid(row=1, column=2, sticky=tk.W)
+                self.log_loc.grid(row=1, column=1, sticky=tk.W)
+                self.log_loc_btn = ttk.Button(self.cfg_frame,
+                                            text=self.tx.m_logs_btn,
+                                            command=self.select_log_dir)
+                self.log_loc_btn.grid(row=1, column=2, sticky=tk.W)
 
-            self.log_lvl_val = tk.StringVar(self.cfg_frame)
-            if self.cfgr.log_level:
-                self.log_lvl_val.set(self.cfgr.log_level)
-            else:
-                self.log_lvl_val.set('INFO')
-            self.log_level = tk.OptionMenu(self.cfg_frame,
-                                           self.log_lvl_val,
-                                           *self.ST.LogLevel.keys())
-            self.log_level.grid(row=2, column=1, sticky=tk.W)
+            def set_log_level_input():
+                """Logging level."""
+                self.log_lvl_val = tk.StringVar(self.cfg_frame)
+                if cf_dflt["log_lvl"]:
+                    self.log_lvl_val.set(cf_dflt["log_lvl"])
+                else:
+                    self.log_lvl_val.set('INFO')
+                self.log_level = tk.OptionMenu(self.cfg_frame,
+                                            self.log_lvl_val,
+                                            *self.ST.LogLevel.keys())
+                self.log_level.grid(row=2, column=1, sticky=tk.W)
 
-            self.bkup_loc = ttk.Entry(self.cfg_frame, width=50)
-            if self.cfgr.bkup_db_path:
+            def set_db_bkup_loc_input():
+                """Location for DB backup and archive files."""
+                self.bkup_loc = ttk.Entry(self.cfg_frame, width=50)
                 bkup_path_val = tk.StringVar(self.cfg_frame)
-                bkup_path_val.set(self.cfgr.bkup_db_path)
+                bkup_path_val.set(cf_dflt["bkup_path"])
                 self.bkup_loc.insert(0, bkup_path_val.get())
-            self.bkup_loc.grid(row=3, column=1, sticky=tk.W)
-            self.bkup_loc_btn = ttk.Button(self.cfg_frame,
-                                           text=self.cfgr.w_m_bkups_btn,
-                                           command=self.select_bkup_dir)
-            self.bkup_loc_btn.grid(row=3, column=2, sticky=tk.W)
+                self.bkup_loc.grid(row=3, column=1, sticky=tk.W)
+                self.bkup_loc_btn = ttk.Button(self.cfg_frame,
+                                            text=self.tx.m_bkups_btn,
+                                            command=self.select_bkup_dir)
+                self.bkup_loc_btn.grid(row=3, column=2, sticky=tk.W)
 
-            self.email = ttk.Entry(self.cfg_frame, width=25)
-            self.email.grid(row=4, column=1, sticky=tk.W)
-            self.passw = ttk.Entry(self.cfg_frame, width=25, show="*")
-            self.passw.grid(row=5, column=1, sticky=tk.W)
+            def set_erep_email_input():
+                """User's eRepublik login email credential."""
+                self.email = ttk.Entry(self.cfg_frame, width=25)
+                email_val = tk.StringVar(self.cfg_frame)
+                email_val.set(usr_dflt["email"])
+                self.email.insert(0, email_val.get())
+                self.email.grid(row=4, column=1, sticky=tk.W)
+
+            def set_erep_password_input():
+                """User's eRepublik login password credential. Hidden input."""
+                self.passw = ttk.Entry(self.cfg_frame, width=25, show="*")
+                passw_val = tk.StringVar(self.cfg_frame)
+                passw_val.set(usr_dflt["passw"])
+                self.passw.insert(0, passw_val.get())
+                self.passw.grid(row=5, column=1, sticky=tk.W)
+
+            def set_apikey_input():
+                """User's eRepublik Tools API key. Hidden input."""
+                self.apikey = ttk.Entry(self.cfg_frame, width=30, show="*")
+                apikey_val = tk.StringVar(self.cfg_frame)
+                apikey_val.set(usr_dflt["apikey"])
+                self.apikey.insert(0, apikey_val.get())
+                self.apikey.grid(row=6, column=1, sticky=tk.W)
+
+            set_log_loc_input()
+            set_log_level_input()
+            set_db_bkup_loc_input()
+            set_erep_email_input()
+            set_erep_password_input()
+            set_apikey_input()
+
+    # make_configs_editor() MAIN:
+
+        print("DEBUG: starting make_configs_editor()...")
 
         self.close_frame()
+        cf_dflt = {"log_loc": "", "log_lvl": "", "bkup_path": ""}
+        usr_dflt = {"email": "", "passw": "", "apikey": ""}
+        cfd, _ = CN.get_config_data()
+        usrd, _ = CN.get_database_user_data()
+        prep_data()
         set_context()
         set_labels()
         set_inputs()
@@ -420,11 +455,11 @@ class Views(object):
             p_detail (str) lengthier message text
         """
         if p_msg_level == "ERROR":
-            m_title = self.cfgr.w_m_error_ttl
+            m_title = self.tx.m_error_ttl
         elif p_msg_level == "WARN":
-            m_title = self.cfgr.w_m_warn_ttl
+            m_title = self.tx.m_warn_ttl
         else:
-            m_title = self.cfgr.w_m_info_ttl
+            m_title = self.tx.m_info_ttl
         messagebox.showwarning(title=m_title, message=p_msg,
                                detail="\n{}".format(p_detail))
 
@@ -433,28 +468,28 @@ class Views(object):
         self.menu_bar = tk.Menu(self.win_root)
 
         self.file_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.menu_bar.add_cascade(label=self.cfgr.w_m_file,
+        self.menu_bar.add_cascade(label=self.tx.m_file,
                                   menu=self.file_menu)
-        self.file_menu.add_command(label=self.cfgr.w_m_save,
+        self.file_menu.add_command(label=self.tx.m_save,
                                    command=self.save_data, state="disabled")
-        self.file_menu.add_command(label=self.cfgr.w_m_close,
+        self.file_menu.add_command(label=self.tx.m_close,
                                    command=self.close_frame, state="disabled")
-        self.file_menu.add_command(label=self.cfgr.w_m_quit,
+        self.file_menu.add_command(label=self.tx.m_quit,
                                    command=self.exit_appl)
 
         self.win_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.menu_bar.add_cascade(label=self.cfgr.w_m_win, menu=self.win_menu)
-        self.win_menu.add_command(label=self.cfgr.w_m_cfg,
+        self.menu_bar.add_cascade(label=self.tx.m_win, menu=self.win_menu)
+        self.win_menu.add_command(label=self.tx.m_cfg,
                                   command=self.make_configs_editor)
-        self.win_menu.add_command(label=self.cfgr.w_m_connect,
+        self.win_menu.add_command(label=self.tx.m_connect,
                                   command=self.make_erep_editor)
 
         self.help_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.menu_bar.add_cascade(label=self.cfgr.w_m_help,
+        self.menu_bar.add_cascade(label=self.tx.m_help,
                                   menu=self.help_menu)
-        self.help_menu.add_command(label=self.cfgr.w_m_docs,
+        self.help_menu.add_command(label=self.tx.m_docs,
                                    command=self.do_nothing, state="disabled")
-        self.help_menu.add_command(label=self.cfgr.w_m_about,
+        self.help_menu.add_command(label=self.tx.m_about,
                                    command=self.do_nothing, state="disabled")
 
         self.win_root.config(menu=self.menu_bar)
@@ -466,7 +501,7 @@ class Views(object):
         """
         # Initial set of Window widgets
         self.win_root = tk.Tk()     # root app window
-        self.win_root.title(self.cfgr.w_app_ttl)
+        self.win_root.title(self.tx.app_ttl)
         self.win_root.geometry('900x600+100+100')
         self.win_root.minsize(900, 600)
         self.win_root.eval('tk::PlaceWindow . center')

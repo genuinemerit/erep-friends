@@ -2,7 +2,7 @@
 #!/usr/bin/python3  # noqa: E265
 
 """
-Simple database manager for erep_friends using sqlite3.
+Simple database manager for ErepFriends using sqlite3.
 
 @DEV
   Add methods to handle standard flat file writes, reads.
@@ -44,16 +44,15 @@ class Dbase(object):
         """
         self.ST = ST
 
-# TYPES
 
     class Types(object):
         """Define non-standard data types."""
 
         dbaction = Literal['add', 'upd', 'del']
-        tblnames = Literal['config', 'user', 'friends']
+        tblnames = Literal['config', 'user', 'citizen', 'texts']
 
     def config_main_db(self):
-        """Define main database configuration."""
+        """Define main database location."""
         self.ST.ConfigFields.main_db_path =\
             path.abspath(path.realpath(self.ST.ConfigFields.db_dir_path))
         if not Path(self.ST.ConfigFields.main_db_path).exists():
@@ -88,14 +87,15 @@ class Dbase(object):
         """Get "data" class column names for selected DB table.
 
         Args:
-            p_tbl_nm (Types.tblnames): config, user or friends
+            p_tbl_nm (Types.tblnames): config, user or citizen
         Returns:
             list: of "data" dataclass column names
         """
         data_keys =\
             self.ST.ConfigFields.keys() if p_tbl_nm == 'config'\
             else self.ST.UserFields.keys() if p_tbl_nm == 'user'\
-            else self.ST.FriendsFields.keys()
+            else self.ST.TextFields.keys() if p_tbl_nm == 'texts'\
+            else self.ST.CitizenFields.keys()
         return data_keys
 
     def create_tables(self):
@@ -106,23 +106,25 @@ class Dbase(object):
         """
         self.connect_dmain(self.ST.ConfigFields.main_db)
         cur = self.dmain_conn.cursor()
-        for tbl_nm in ['config', 'user', 'friends']:
+        for tbl_nm in ['config', 'user', 'citizen', 'texts']:
+            # Does table already exist?
             sql = "SELECT name FROM sqlite_master " +\
                 "WHERE type='table' AND name='{}';".format(tbl_nm)
             cur.execute(sql)
             result = cur.fetchall()
+            # No...
             if len(result) == 0:
                 data_keys = self.get_data_keys(tbl_nm)
                 col_nms = [*data_keys, *self.ST.AuditFields.keys()]
-                for col in col_nms:
-                    ix = col_nms.index(col)
+                for ix, col in enumerate(col_nms):
+                    # ix = col_nms.index(col)
                     if col == "encrypt_key":
                         col_nms[ix] = col + " BLOB"
                     else:
                         col_nms[ix] = col + " TEXT"
-                    if col in ("create_ts", "hash_id"):
+                    if col in ("pid", "uid", "create_ts", "hash_id"):
                         col_nms[ix] += " NOT NULL"
-                    if col == "hash_id":
+                    if col == "uid":
                         col_nms[ix] += " PRIMARY KEY"
                 sql = "CREATE TABLE {}({});".format(tbl_nm, ", ".join(col_nms))
                 cur.execute(sql)
@@ -132,20 +134,19 @@ class Dbase(object):
 
     def set_insert_sql(self,
                        p_tbl_nm: Types.tblnames,
-                       p_data_rec: list,
-                       p_audit_rec: list) -> str:
+                       p_data_rec: dict,
+                       p_audit_rec: dict) -> str:
         """Format SQL for an INSERT.
 
         Args:
-            p_tbl_nm (Types.tblnames -> str): user, friends, configs
-            data_rec (list): mirrors an "data" dataclass
-            audit_rec (list): mirrors the "audit" dataclass
+            p_tbl_nm (Types.tblnames -> str): user, citizen, configs
+            p_data_rec (dict): mirrors an "data" dataclass
+            p_audit_rec (dict): mirrors the "audit" dataclass
 
         Returns:
             str: formatted SQL to execute
         """
-        sql_cols = ", ".join([*p_data_rec.keys(),
-                              *self.ST.AuditFields.keys()])
+        sql_cols = ", ".join([*p_data_rec.keys(), *p_audit_rec.keys()])
         sql_vals = ""
         for cnm, val in p_data_rec.items():
             if cnm == "encrypt_key":
@@ -154,8 +155,7 @@ class Dbase(object):
                 sql_vals += "NULL, "
             else:
                 sql_vals += "'{}', ".format(val)
-        for cnm in self.ST.AuditFields.keys():
-            val = p_audit_rec[cnm]
+        for cnm, val in p_audit_rec.items():
             if val is None:
                 sql_vals += "NULL, "
             else:
@@ -165,70 +165,80 @@ class Dbase(object):
                                                         sql_vals[:-2])
         return(sql)
 
-    def hash_and_encrypt(self,
+    def hash_data_values(self,
                          p_data_rec: dict,
-                         p_audit_rec: dict,
-                         p_encrypt_key: str) -> tuple:
-        """Hash and encrypt a data row as needed.
+                         p_audit_rec: dict) -> tuple:
+        """Hash a data row as needed.
 
         Args:
             p_data_rec (dict): mirrors "data" dataclass
             p_audit_rec (dict): mirrors "audit" dataclass
-            p_encrypt_key (str): user's encryption key
 
         Returns:
             tuple of updated (dataclass("audit), dataclass("data"))
         """
-        # Store modified values
         data_rec = p_data_rec
         audit_rec = p_audit_rec
         hash_str = ""
-        # Double-check this logic to make sure it is working.
-        # I seem to be getting inserts even when all values are the same.
         for cnm, val in p_data_rec.items():
             if cnm != "encrypt_key"\
-            and val not in (None, "None", ""):             # then hash
+            and val not in (None, "None", ""):
                 hash_str += str(val)
-                if p_audit_rec["is_encrypted"] == "True":  # and encrypt
-                    data_rec[cnm] = CI.encrypt(str(val), p_encrypt_key)
         audit_rec["hash_id"] = UT.get_hash(hash_str)
         return(data_rec, audit_rec)
 
-    def get_encrypt_key(self,
-                        p_tbl_nm: Types.tblnames,
-                        p_encrypt_all: bool = False) -> tuple:
-        """Get the encrypt key and encrypt-all setting.
+    def encrypt_data_values(self,
+                         p_data: dict) -> dict:
+        """Encrypt a data on a user table row.
 
         Args:
-            p_tbl_nm (Types.tblnames): name of table being modified
-            p_encrypt_all (bool): selected setting. Use only if table
-                is user. Default is False.
+            p_data (dict): mirrors "data" dataclass
 
         Returns:
-            tuple: (str: encrypt_key, bool: encrypt_all)
+            dict: updated / encrypted "data" row
         """
-        encrypt_key = None
-        encrypt_all = False
+        data_rec = p_data
+        for cnm, val in p_data.items():
+            if cnm != "encrypt_key"\
+            and val not in (None, "None", ""):
+                data_rec[cnm] = CI.encrypt(str(val), p_data["encrypt_key"])
+        return data_rec
+
+    def query_latest(self,
+                     p_tbl_nm: Types.tblnames,
+                     p_pid: str = None,
+                     p_single: bool = True):
+        """Get the latest non-deleted record(s) for selected table.
+
+        Args:
+            p_tbl_nm (Types.tblnames -> str): user, citizen, config, texts
+            p_pid (str): Ignored except for citizen, when it is required.
+            p_single (bool): If True, return only latest row even if there are
+                             multiples with NULL delete_ts. If False, return
+                             all latest rows that have a NULL delete_ts.
+
+        Returns:
+            dict ("data": ..., "audit", ...) for user, config or texts
+            list (of dicts like this ^) for citizen
+        """
+        db_recs = None
         if p_tbl_nm == "user":
-            encrypt_key = CI.set_key()
-            encrypt_all = p_encrypt_all
-        elif p_tbl_nm == "friends":
-            user_rec = self.query_user()
-            encrypt_key = user_rec["data"].encrypt_key
-            encrypt_all = user_rec["data"].encrypt_all
-        return(encrypt_key, encrypt_all)
+            db_recs = self.query_user(p_single)
+        elif p_tbl_nm == "config":
+            db_recs = self.query_config(p_single)
+        elif p_tbl_nm == "texts":
+            db_recs = self.query_texts(p_single)
+        # else handle read of citizens data...
+        return db_recs
 
     def set_insert_data(self,
                   p_tbl_nm: Types.tblnames,
-                  p_data_rec: dict,
-                  p_encrypt: bool) -> tuple:
+                  p_data: dict) -> tuple:
         """Format one logically new row for main database.
 
         Args:
-            p_tbl_nm (Types.tblnames -> str): user, friends, config
-            p_data_rec (dict): mirrors a "data" dataclass
-            p_encrypt (bool, optional): For friends table only. If True,
-                encrypt "data". user table always encrypted. Default is False.
+            p_tbl_nm (Types.tblnames -> str): user, citizen, config, texts
+            p_data (dict): mirrors a "data" dataclass
 
         Returns:
             tuple: (dict: data_rec, dict: audit_rec)
@@ -236,253 +246,307 @@ class Dbase(object):
         audit_rec = dict()
         for cnm in self.ST.AuditFields.keys():
             audit_rec[cnm] = copy(getattr(self.ST.AuditFields, cnm))
+        audit_rec["uid"] = UT.get_uid()
         audit_rec["pid"] = UT.get_uid()
         dttm = UT.get_dttm('UTC')
         audit_rec["create_ts"] = dttm.curr_utc
         audit_rec["update_ts"] = dttm.curr_utc
         audit_rec["delete_ts"] = None
-
-        encrypt_all = p_data_rec["encrypt_all"]\
-                      if p_tbl_nm == 'user' else False
-        encrypt_key, encrypt_all = self.get_encrypt_key(p_tbl_nm, encrypt_all)
-        if p_tbl_nm == "user":
-            p_data_rec["encrypt_key"] = encrypt_key
-            p_data_rec["encrypt_all"] = encrypt_all
-        if p_encrypt or encrypt_all in (True, "True"):
-            audit_rec["is_encrypted"] = "True"
         data_rec, audit_rec =\
-            self.hash_and_encrypt(p_data_rec, audit_rec, encrypt_key)
+            self.hash_data_values(p_data, audit_rec)
+        recs = self.query_latest(p_tbl_nm, audit_rec["pid"])
+        if recs is not None:
+            aud = UT.make_namedtuple("aud", recs["audit"])
+            if aud.hash_id == audit_rec["hash_id"]:
+                return(None, None)
+        if p_tbl_nm == "user":
+            p_data["encrypt_key"] = CI.set_key()
+            data_rec = self.encrypt_data_values(p_data)
         return(data_rec, audit_rec)
 
     def set_upsert_data(self,
                   p_tbl_nm: Types.tblnames,
                   p_data: dict,
-                  p_pid: str,
-                  p_encrypt: bool) -> tuple:
+                  p_pid: str) -> tuple:
         """Format one logically updated row to main database.
 
         Do nothing if no value-changes are detected.
 
-        @DEV 1 - test the "no change" logic more carefully.
-         Either it is not noticing that there is no change or
-         different hashes are being generated for the same data.
-
-        @DEV 2 - start updating the delete_ts for obsoleted records.
-         This will be a physical UPDATE based on read by PK (hash_id)
-
         Args:
-            p_tbl_nm (Types.tblnames -> str): user, friends, config
+            p_tbl_nm (Types.tblnames -> str): user, citizen, config
             p_data (dict): that mirrors a "data" dataclass
             p_pid (str): Unique Identifier of record to be updated
-            p_encrypt (bool, optional): For friends table only. If True,
-                encrypt "data". user table always encrypted. Default is False.
 
         Returns:
             tuple: (dict: data_rec, dict: audit_rec)
         """
-        if p_tbl_nm == 'config':
-            db_rec = self.query_config()
-        elif p_tbl_nm == 'user':
-            db_rec = self.query_user()
-        # else query friends for latest record with pid = p_pid
-        if not db_rec or db_rec["audit"].pid != p_pid:
-            msg = "Cannot upsert. Record not found or ID not matched."
+        recs = self.query_latest(p_tbl_nm, p_pid)
+        aud = UT.make_namedtuple("aud", recs["audit"])
+        if not aud or aud.pid != p_pid:
+            msg = "Cannot upsert. Record not found or PID not matched."
             raise Exception(ValueError, msg)
-
-        audit_rec = dict()
-        for cnm in self.ST.AuditFields.keys():
-            audit_rec[cnm] = copy(getattr(db_rec["audit"], cnm))
+        audit_rec = UT.make_dict(self.ST.AuditFields.keys(), aud)
         dttm = UT.get_dttm('UTC')
+        audit_rec["uid"] = UT.get_uid()
+        audit_rec['pid'] = aud.pid
+        audit_rec['create_ts'] = aud.create_ts
         audit_rec['update_ts'] = dttm.curr_utc
-
-        encrypt_all = p_data["encrypt_all"] if p_tbl_nm == 'user' else False
-        encrypt_key, encrypt_all = self.get_encrypt_key(p_tbl_nm, encrypt_all)
-        if p_encrypt or encrypt_all in (True, "True"):
-            audit_rec["is_encrypted"] = "True"
         data_rec, audit_rec =\
-            self.hash_and_encrypt(p_data, audit_rec, encrypt_key)
-        # Double-check this logic to make sure it is working
-        # I seem to be getting inserts even when all values are the same.
-        if db_rec["audit"].hash_id == audit_rec["hash_id"]:
-            return(None, None)
-        return(data_rec, audit_rec)
+            self.hash_data_values(p_data, audit_rec)
+
+        pp(("data_rec", data_rec))
+        pp(("audit_rec", audit_rec))
+
+        if p_tbl_nm == "user":
+            data_rec = self.encrypt_data_values(p_data)
+        if aud.hash_id == audit_rec["hash_id"]:
+            return(None, None, None)
+        return(data_rec, audit_rec, aud.hash_id)
+
+    def set_logical_delete_sql(self,
+                               p_tbl_nm: Types.tblnames,
+                               p_pid: str):
+        """Set value of delete_ts on the previously-active record."""
+        recs = self.query_latest(p_tbl_nm, p_pid, False)
+        aud = UT.make_namedtuple("aud", recs[0]["audit"])
+
+        # Assumptions:
+        #  Should always get a list back
+        #  Should never get more than 2 rows back
+        #  The first row in the list has the older update_ts
+        pp(("recs", recs))
+        pp(("recs[0]['audit']", recs[0]['audit']))
+        pp(("recs[1]['audit']", recs[1]['audit']))
+
+        dttm = UT.get_dttm('UTC')
+        sql = "UPDATE {}".format(p_tbl_nm)
+        sql += " SET delete_ts = '{}'".format(dttm.curr_utc)
+        sql += " WHERE uid = '{}';".format(aud.uid)
+
+        return sql
+
+    def execute_txn_sql(self,
+                        p_db_action: Types.dbaction,
+                        p_tbl_nm: Types.tblnames,
+                        p_sql: str,
+                        p_pid: str = None,
+                        p_encrypt_key: str = None):
+        """Execute SQL to modify the database content.
+
+        Args:
+            p_db_action (Types.dbaction -> string): add, upd, del
+            p_tbl_nm (Types.tblnames -> str): user, citizen, config, texts
+            p_sql (string): the SQL statement to execute
+            p_pid (string): if updating a record, used to delete previous
+            p_encrypt_key (string): if adding or updating a user record
+        """
+
+        pp(("p_sql", p_sql))
+
+        self.connect_dmain(self.ST.ConfigFields.main_db)
+        cur = self.dmain_conn.cursor()
+        if p_encrypt_key:
+            try:
+                cur.execute(p_sql, [p_encrypt_key])
+                self.dmain_conn.commit()
+            except IOError:
+                self.dmain_conn.close()
+        else:
+            try:
+                cur.execute(p_sql)
+                self.dmain_conn.commit()
+            except IOError:
+                self.dmain_conn.close()
+        self.dmain_conn.close()
+        if p_db_action == "upd":
+            self.write_db("del", p_tbl_nm, None, p_pid)
 
     def write_db(self,
                  p_db_action: Types.dbaction,
                  p_tbl_nm: Types.tblnames,
-                 p_data: dict,
-                 p_pid: str = None,
-                 p_encrypt: bool = False):
+                 p_data: dict = None,
+                 p_pid: str = None):
         """Write a record to the DB.
 
         Args:
             p_db_action (Types.dbaction -> str): add, upd, del
-            p_tbl_nm (Types.tblnames -> str): user, friends, config
-            p_data (dict): a dict that mirrors a "data" dataclass
-            p_pid (string, optional): Required for upd, del. Default is None.
-            p_encrypt (bool, optional): For friends only. If True, encrypt
-              "data" fields. user "data" always encrypted. Default is False.
+            p_tbl_nm (Types.tblnames -> str): user, citizen, config, texts
+            p_data (dict): mirrors a "data" dataclass. None if "del".
+            p_pid (string): Required for upd, del. Default is None.
         """
         if p_db_action == "add":
-            data_rec, audit_rec = self.set_insert_data(p_tbl_nm, p_data, p_encrypt)
+            data_rec, audit_rec = self.set_insert_data(p_tbl_nm, p_data)
         elif p_db_action == "upd":
-            data_rec, audit_rec =\
-                self.set_upsert_data(p_tbl_nm, p_data, p_pid, p_encrypt)
-        if data_rec is not None and audit_rec is not None:
-            sql = self.set_insert_sql(p_tbl_nm, data_rec, audit_rec)
-            encrypt_key = data_rec["encrypt_key"]\
-                if "encrypt_key" in data_rec.keys() else False
-            if sql:
-                self.connect_dmain(self.ST.ConfigFields.main_db)
-                cur = self.dmain_conn.cursor()
-                if encrypt_key:
-                    try:
-                        cur.execute(sql, [encrypt_key])
-                        self.dmain_conn.commit()
-                    except IOError:
-                        self.dmain_conn.close()
-                else:
-                    try:
-                        cur.execute(sql)
-                        self.dmain_conn.commit()
-                    except IOError:
-                        self.dmain_conn.close()
-                self.dmain_conn.close()
+            data_rec, audit_rec, prev_hash_id =\
+                self.set_upsert_data(p_tbl_nm, p_data, p_pid)
+        sql = ""
+        encrypt_key = ""
+        if p_db_action in ("add", "upd"):
+            if data_rec is not None and audit_rec is not None:
+                sql = self.set_insert_sql(p_tbl_nm, data_rec, audit_rec)
+                encrypt_key = data_rec["encrypt_key"]\
+                    if "encrypt_key" in data_rec.keys() else False
+        elif p_db_action == "del":
+            sql = self.set_logical_delete_sql(p_tbl_nm, p_pid)
+        if sql:
+            self.execute_txn_sql(p_db_action, p_tbl_nm, sql,
+                                 p_pid, encrypt_key)
 
-    def decrypt_query_result(self,
-                             p_tbl_nm: Types.tblnames,
-                             p_data_list: list) -> list:
-        """If data is encrypted, unencrypt it.
+    def decrypt_user_data(self,
+                          p_user_data: dict) -> dict:
+        """Unencrypt user row data.
 
         Args:
-            p_tbl_nm (Types.tblnames -> str): config, user, friends
-            p_data_list (list): encrypted list of dataclass results
+            p_user_data (dict): encrypted "data" info for user table
 
         Returns:
-            list: decrypted list of dataclass-formatted results
+            dict: decrypted "data" info
         """
-        if p_tbl_nm == "user":
-            encrypt_key = p_data_list[0]["data"].encrypt_key
-        else:
-            user_rec = self.query_user()
-            if not user_rec:
-                msg = "User record not found"
-                raise Exception(ValueError, msg)
-            encrypt_key = user_rec["data"].encrypt_key
-        data_keys = self.get_data_keys(p_tbl_nm)
+        user_data = copy(p_user_data)
+        encrypt_key = user_data["encrypt_key"]
+        data_keys = self.ST.UserFields.keys()
         data_keys.remove("encrypt_key")
-        data_list = list()
-        for row in p_data_list:
-            for cnm in data_keys:
-                encrypted_val = getattr(row["data"], cnm)
-                decrypt_val = CI.decrypt(encrypted_val, encrypt_key)
-                setattr(row["data"], cnm, decrypt_val)
-            data_list.append(row)
-        return(data_list)
+        for cnm in data_keys:
+            user_data[cnm] = CI.decrypt(user_data[cnm], encrypt_key)
+        return(user_data)
 
     def format_query_result(self,
                             p_tbl_nm: Types.tblnames,
-                            p_decrypt: bool,
-                            p_col_nms: list,
                             p_result: list) -> list:
         """Convert sqlite3 results into local format.
 
         Sqlite returns each row as a tuple in a list.
-        When no rows are found, sqlite return a tuple with
+        When no rows are found, sqlite returns a tuple with
           all values set to None, which is odd since then
-          we get a rowcount > 0. Sqlite also appears to
-          return an extra timestamp value at the end of
-          the row.
+          we get a rowcount > 0. Sqlite also returns an extra
+          timestamp at the end of the row.
         To facilitate data management on the return side,
-          cast each row into a dataclass and put those in list,
-          ignoring the row if it is all None values.
+          cast each row of returned data into a namedtuple that
+          mirrors a dataclass and put those in a list.
+          Ignore the row if it is all None values.
 
         Args:
-            p_tbl_nm (Types.tblnames -> str): config, user, friends
-            p_decrypt (bool): True if results should be decrypted
-            p_col_nms (list): list of all col names on the row
+            p_tbl_nm (Types.tblnames -> str): config, user, citizen, texts
             p_result (sqlite result set -> list): list of tuples
 
         Returns:
-            list: each containing a dict of "data" and "audit" dataclass
+            list: each row is dict of dicts keyed by "data", "audit",
+                  mirroring appropriate dataclass structures
         """
-        data_list = list()
-        for row in p_result:
-            data_keys = self.get_data_keys(p_tbl_nm)
-            data_vals = self.ST.ConfigFields if p_tbl_nm == 'config'\
-                        else self.ST.UserFields if p_tbl_nm == 'user'\
-                        else self.ST.FriendsFields
-            data_row = {"data": data_vals, "audit": self.ST.AuditFields}
+        def init_recs():
+            dat_rec = dict()
+            aud_rec = dict()
+            for cnm in dat_keys:
+                dat_rec[cnm] = copy(getattr(dat_dflt, cnm))
+            for cnm in aud_keys:
+                aud_rec[cnm] = copy(getattr(self.ST.AuditFields, cnm))
+            return (dat_rec, aud_rec)
+
+        data_out = list()
+        dat_keys = self.get_data_keys(p_tbl_nm)
+        aud_keys = self.ST.AuditFields.keys()
+        col_nms = dat_keys + aud_keys
+        dat_dflt = self.ST.ConfigFields if p_tbl_nm == 'config'\
+                   else self.ST.UserFields if p_tbl_nm == 'user'\
+                   else self.ST.TextFields if p_tbl_nm == 'texts'\
+                   else self.ST.CitizenFields
+        max_ix = len(col_nms) - 1
+
+        for rx, in_row in enumerate(p_result):
             all_none = True
-            max_col_ix = len(p_col_nms) - 1
-            for col_ix, val in enumerate(row):
-                if col_ix > max_col_ix:
+            dat_rec, aud_rec = init_recs()
+            for ix, val in enumerate(in_row):
+                if ix > max_ix:
                     break
                 all_none = False if val is not None else all_none
-                col_nm = p_col_nms[col_ix]
-                if col_nm in data_keys:
-                    setattr(data_row["data"], col_nm, val)
+                col_nm = col_nms[ix]
+                if col_nm in dat_keys:
+                    dat_rec[col_nm] = val
                 else:
-                    setattr(data_row["audit"], col_nm, val)
+                    aud_rec[col_nm] = val
             if not all_none:
-                data_list.append(data_row)
-        if p_decrypt and data_row["audit"].is_encrypted == 'True':
-            data_list = self.decrypt_query_result(p_tbl_nm, data_list)
-        return data_list
+                data_out.append({"data": dat_rec, "audit": aud_rec})
+        if p_tbl_nm == "user" and len(data_out) > 0:
+            data_out[0]["data"] =\
+                self.decrypt_user_data(data_out[0]["data"])
+        return data_out
 
-    def query_user(self, p_decrypt: bool = True) -> list:
-        """Run read-only query against the user table.
-
-        Always query for one record with max update_ts.
-        We only support one active (non-deleted) user.
+    def execute_query_sql(self,
+                          p_tbl_nm: Types.tblnames,
+                          p_single=True):
+        """Execute a SELECT query, with option to return only latest row.
 
         Args:
-            p_decrypt (bool, optional): If True, return decrypted data,
-                else return data as-is on the database.
+            p_tbl_nm (Types.tblnames -> str)
+            p_single (bool): If True, return only the latest row
 
         Returns:
-            list: of dataclass objects containing query results  or  empty
+            dict: of (namedtuples keyed by "data", "audit")  or
+            list of dicts liked that ^  or
+            None if no rows found
         """
-        col_nms = [*self.ST.UserFields.keys(), *self.ST.AuditFields.keys()]
-        sql = "SELECT {}, MAX(update_ts) FROM {} ".format(", ".join(col_nms),
-                                                          "user")
-        sql += "WHERE delete_ts IS NULL;"
-        cfgd = self.query_config()
-        self.connect_dmain(cfgd["data"].main_db)
-        cur = self.dmain_conn.cursor()
-        cur_result = cur.execute(sql).fetchall()
-        user_rec = self.format_query_result("user", p_decrypt,
-                                            col_nms, cur_result)
-
-        user_rec = user_rec[0] if len(user_rec) > 0 else user_rec
-        return user_rec
-
-    def query_config(self) -> list:
-        """Run read-only query against the user table.
-
-        Always query for one record with max update_ts.
-        We only support one active (non-deleted) config record.
-        On successful query, return result and also refresh
-          config data in Structs object.
-
-        Returns:
-            list: of dataclass objects containing query results  or  empty
-        """
-        col_nms = [*self.ST.ConfigFields.keys(), *self.ST.AuditFields.keys()]
-        sql = "SELECT {}, MAX(update_ts) FROM {} ".format(", ".join(col_nms),
-                                                          "config")
+        data_cols = self.ST.TextFields.keys() if p_tbl_nm == "texts"\
+            else self.ST.ConfigFields.keys() if p_tbl_nm == "config"\
+            else self.ST.UserFields.keys() if p_tbl_nm == "user"\
+            else self.ST.CitizenFields.keys()
+        col_nms = data_cols + self.ST.AuditFields.keys()
+        sql = "SELECT {}, ".format(", ".join(col_nms))
+        if p_single:
+            sql += "MAX(update_ts)"
+        else:
+            sql = sql[:-2] # remove trailing comma and space
+        sql += " FROM {} ".format(p_tbl_nm)
         sql += "WHERE delete_ts IS NULL;"
         self.connect_dmain(self.ST.ConfigFields.main_db)
         cur = self.dmain_conn.cursor()
-        cur_result = cur.execute(sql).fetchall()
-        config_rec = self.format_query_result("config", False,
-                                              col_nms, cur_result)
-        if len(config_rec) > 0:
-            cfg_data = config_rec[0]["data"]
-            for cnm in self.ST.ConfigFields.keys():
-                setattr(self.ST.ConfigFields, cnm, getattr(cfg_data, cnm))
-        config_rec = config_rec[0] if len(config_rec) > 0 else config_rec
-        return config_rec
+
+        pp(("sql", sql))
+
+        result = cur.execute(sql).fetchall()
+        data_recs = self.format_query_result(p_tbl_nm, result)
+        if len(data_recs) < 1:
+            data_recs = None
+        elif p_single:
+            data_recs = data_recs[0]
+        return data_recs
+
+    def query_texts(self, p_single=True) -> dict:
+        """Run read-only query against the texts table.
+
+        Args:
+            p_single (bool): If True, return only the latest row
+
+        Returns:
+            dict: of (namedtuples keyed by "data", "audit")
+        """
+        return self.execute_query_sql("texts", p_single)
+
+    def query_config(self, p_single=True) -> object:
+        """Run read-only query against the user table.
+
+        Args:
+            p_single (bool): If True, return only the latest row
+
+        Returns:
+            dict: of (namedtuples keyed by "data", "audit")
+        """
+        return self.execute_query_sql("config", p_single)
+
+    def query_config_data(self) -> namedtuple:
+        cf = self.query_config()
+        cfd = UT.make_namedtuple("cfd", cf["data"])
+        return cfd
+
+    def query_user(self, p_single=True) -> dict:
+        """Run read-only query against the user table.
+
+        Args:
+            p_single (bool): If True, return only the latest row
+
+        Returns:
+            dict: of (namedtuples keyed by "data", "audit")
+        """
+        return self.execute_query_sql("user", p_single)
 
     def config_bkup_db(self,
                        p_bkup_db_path: str) -> tuple:
@@ -491,21 +555,14 @@ class Dbase(object):
         Args:
             p_bkup_db_path (string): full parent path to backup dbs
         Returns:
-            tuple: (str: full bkup db dir, str: full arcv db dir,
-                    str: full bkup db path, str: full arcv db path)
+            tuple: (str: full bkup db dir, str: full bkup db path)
         """
-        # backup database
         bkup_db_path = path.abspath(path.realpath(p_bkup_db_path))
         if not Path(bkup_db_path).exists():
             msg = p_bkup_db_path + " could not be reached"
             raise Exception(IOError, msg)
-        bkup_db = path.join(bkup_db_path,
-                            self.ST.ConfigFields.db_name)
-        # archive databases
-        arcv_db_path = bkup_db_path
-        arcv_db = path.join(arcv_db_path,
-                            self.ST.ConfigFields.db_name)
-        return(bkup_db_path, arcv_db_path, bkup_db, arcv_db)
+        bkup_db = path.join(bkup_db_path, self.ST.ConfigFields.db_name)
+        return(bkup_db_path, bkup_db)
 
     def disconnect_dbkup(self):
         """Drop connection to backup database at configured path."""
@@ -549,11 +606,11 @@ class Dbase(object):
         Creates a backup database file if it does not exist, else
           overwrites it.
         """
-        cfgd = self.query_config()
-        if cfgd["data"].bkup_db\
-        and cfgd["data"].bkup_db not in (None, 'None'):
-            self.connect_dmain(cfgd["data"].main_db)
-            self.connect_dbkup(cfgd["data"].bkup_db)
+        cfd = self.query_config_data()
+        if cfd.bkup_db\
+        and cfd.bkup_db not in (None, 'None'):
+            self.connect_dmain(cfd.main_db)
+            self.connect_dbkup(cfd.bkup_db)
             self.dmain_conn.backup(self.dbkup_conn, pages=0, progress=None)
             self.disconnect_dmain()
             self.disconnect_dbkup()
@@ -564,19 +621,18 @@ class Dbase(object):
         Distinct from regular backup file. A time-stamped, one-time copy.
         Use this to make a point-in-time copy or prior to doing a purge.
         """
-        cfgd = self.query_config()
-        if cfgd["data"].arcv_db\
-        and cfgd["data"].arcv_db not in (None, 'None'):
+        cfd = self.query_config_data()
+        if cfd.arcv_db\
+        and cfd.arcv_db not in (None, 'None'):
             dttm = UT.get_dttm('UTC')
-            arcv_db = cfgd["data"].arcv_db + "." + dttm.curr_ts
-            self.connect_dmain(cfgd["data"].main_db)
+            arcv_db = cfd.arcv_db + "." + dttm.curr_ts
+            self.connect_dmain(cfd.main_db)
             self.connect_darcv(arcv_db)
             self.dmain_conn.backup(self.darcv_conn, pages=0, progress=None)
             self.disconnect_dmain()
             self.disconnect_darcv()
 
-
-
+    # ================  snippet code =========================
 
     def destroy_db(self, db_path: str) -> bool:
         """Delete the specified database file.
@@ -609,7 +665,7 @@ class Dbase(object):
         return False
 
     def purge_rows(self, p_pids: list, cur: object):
-        """Physically delete a row from friends table on main db.
+        """Physically delete a row from citizen table on main db.
 
         Args:
             p_pids (list): (pids, delete_ts) tuples associated
@@ -619,41 +675,60 @@ class Dbase(object):
         for row in p_pids:
             d_pid = row[0]
             d_delete_ts = row[1]
-            sql = "DELETE friends WHERE uid = '{}' ".format(d_pid)
+            sql = "DELETE citizen WHERE uid = '{}' ".format(d_pid)
             sql += "AND delete_ts = '{}';".format(d_delete_ts)
             cur.execute(sql)
 
     def purge_db(self):
-        """Remove rows from main db friends table."""
+        """Remove rows from main db citizen table."""
         self.archive_db()
 
         # Modify to use an appropriate purge threshold, not just
         # "deleted before today"
         dttm = UT.get_dttm()
-        sql = "SELECT pid, delete_ts FROM friends "
+        sql = "SELECT pid, delete_ts FROM citizen "
         sql += "WHERE delete_ts < '{}' ".format(dttm.curr_utc)
         sql += "AND delete_ts IS NOT NULL;"
 
-        cfgd = self.query_config()
-        self.connect_dmain(cfgd["data"].main_db)
+        cfd = self.query_config_data()
+        self.connect_dmain(cfd.main_db)
         cur = self.dmain_conn.cursor()
         pid_list = [row for row in cur.execute(sql)]
         self.purge_rows(cur, pid_list)
         self.dmain_conn.commit()
         self.disconnect_dmain()
 
+    def query_citizen(self,
+                      p_filter: dict = None) -> list:
+        """Run read-only queries against the citizen table.
 
+        - AND logic is is used when multiple colums are queried.
+        - No JOIN or OR logic supported.
+        - GROUP BY is triggered by a search value of 'LIST'.
 
+        Args:
+            p_filter (dict, optional): Required for citizen, only for citizen.
+                Using col-names from self.ST.DBSCHEMA, specify 1..n columns and
+                paired values. Or, single col-nm with value = "LIST".
 
+        Returns:
+            list: of dataclass objects containing query results  or  empty
+        """
+        sql = "SELECT {}, MAX(update_ts) FROM {} ".format(", ".join(col_nms),
+                                                          "citizen")
+        sql = self.query_citizen_more(sql)
+        cfd = self.query_config_data()
+        self.connect_dmain(cfd.main_db)
+        cur = self.dmain_conn.cursor()
+        result = cur.execute(sql).fetchall()
+        user_rec = self.format_query_result("citizen", result)
+        return user_rec
 
-
-
-
-    def query_friends_more(self, p_sql: str,
+    def query_citizen_more(self, p_sql: str,
                            p_filter: dict) -> str:
-        """Build SQL to do read query on the friends table.
+        """Build SQL to do read query on the citizen table.
 
-        - Read friends table by:
+        - Read citizen table by:
             - uid =
             - name =
             - profile_id =
@@ -664,7 +739,7 @@ class Dbase(object):
             - or any AND combination of the above
             ... where delete_ts is NULL and MAX(update_ts)
             ... and return all columns
-        - List unique values from friends table for:
+        - List unique values from citizen table for:
             (same columns as above)
             ... where delete_ts is NULL and MAX(update_ts)
 
@@ -692,37 +767,6 @@ class Dbase(object):
             col_nm = list(p_filter.keys())[0]
             sql = "SELECT {}, ".format(col_nm)
             sql += "COUNT({}), MAX(update_ts) ".format(col_nm)
-            sql += "FROM friends WHERE delete_ts IS NULL"
+            sql += "FROM citizen WHERE delete_ts IS NULL"
             sql += " GROUP BY {};".format(col_nm)
         return sql
-
-    def query_friends(self, p_decrypt: bool = True,
-                      p_filter: dict = None) -> list:
-        """Run read-only queries against the friends table.
-
-        - AND logic is is used when multiple colums are queried.
-        - No JOIN or OR logic supported.
-        - GROUP BY is triggered by a search value of 'LIST'.
-
-        Args:
-            p_decrypt (bool, optional): If True, return decrypted data,
-                else return data as-is on the database.
-            p_filter (dict, optional): Required for friends, only for friends.
-                Using col-names from self.ST.DBSCHEMA, specify 1..n columns and
-                paired values. Or, single col-nm with value = "LIST".
-
-        Returns:
-            list: of dataclass objects containing query results  or  empty
-        """
-        col_nms = [*self.ST.DBSCHEMA["friends"].keys(),
-                   *self.ST.AuditFields.keys()]
-        sql = "SELECT {}, MAX(update_ts) FROM {} ".format(", ".join(col_nms),
-                                                          "friends")
-        sql = self.query_friends_more(sql)
-        cfgd = self.query_config()
-        self.connect_dmain(cfgd["data"].main_db)
-        cur = self.dmain_conn.cursor()
-        cur_result = cur.execute(sql).fetchall()
-        user_rec = self.format_query_result("friends", p_decrypt,
-                                          col_nms, cur_result)
-        return user_rec
