@@ -228,7 +228,8 @@ class Dbase(object):
             db_recs = self.query_config(p_single)
         elif p_tbl_nm == "texts":
             db_recs = self.query_texts(p_single)
-        # else handle read of citizens data...
+        elif p_tbl_nm == "citizen":
+            db_recs = self.query_citizen_by_pid(p_pid)
         return db_recs
 
     def set_insert_data(self,
@@ -281,16 +282,24 @@ class Dbase(object):
             tuple: (dict: data_rec, dict: audit_rec)
         """
         recs = self.query_latest(p_tbl_nm, p_pid)
+
+        pp(("p_tbl_nm", p_tbl_nm))
+        pp(("p_pid", p_pid))
+        pp(("recs", recs))
+
         aud = UT.make_namedtuple("aud", recs["audit"])
+        dat = UT.make_namedtuple("dat", recs["data"])
         if not aud or aud.pid != p_pid:
             msg = "Cannot upsert. Record not found or PID not matched."
             raise Exception(ValueError, msg)
         audit_rec = UT.make_dict(self.ST.AuditFields.keys(), aud)
-        dttm = UT.get_dttm('UTC')
         audit_rec["uid"] = UT.get_uid()
-        audit_rec['pid'] = aud.pid
-        audit_rec['create_ts'] = aud.create_ts
+        audit_rec['pid'] = copy(aud.pid)
+        audit_rec['create_ts'] = copy(aud.create_ts)
+        dttm = UT.get_dttm('UTC')
         audit_rec['update_ts'] = dttm.curr_utc
+        if p_tbl_nm == "user" and p_data["encrypt_key"] in (None, "None", ""):
+            p_data["encrypt_key"] = copy(dat.encrypt_key)
         data_rec, audit_rec =\
             self.hash_data_values(p_data, audit_rec)
 
@@ -473,8 +482,38 @@ class Dbase(object):
 
     def execute_query_sql(self,
                           p_tbl_nm: Types.tblnames,
-                          p_single=True):
+                          p_sql: str,
+                          p_single: bool =True):
         """Execute a SELECT query, with option to return only latest row.
+
+        Args:
+            p_sql (str) DB SELECT to execute
+            p_tbl_nm (Types.tblnames -> str)
+            p_single (bool): If True, return only the latest row
+
+        Returns:
+            dict: of (namedtuples keyed by "data", "audit")  or
+            list of dicts liked that ^  or
+            None if no rows found
+        """
+        self.connect_dmain(self.ST.ConfigFields.main_db)
+        cur = self.dmain_conn.cursor()
+        result = cur.execute(p_sql).fetchall()
+        self.disconnect_dmain()
+        data_recs = self.format_query_result(p_tbl_nm, result)
+        if len(data_recs) < 1:
+            data_recs = None
+        elif p_single:
+            data_recs = data_recs[0]
+        return data_recs
+
+    def format_query_sql(self,
+                          p_tbl_nm: Types.tblnames,
+                          p_single: bool = True):
+        """Format a SELECT query, with option to return only latest row.
+
+        Use this for all tables except citizen, which has different
+        search criteria.
 
         Args:
             p_tbl_nm (Types.tblnames -> str)
@@ -497,18 +536,8 @@ class Dbase(object):
             sql = sql[:-2] # remove trailing comma and space
         sql += " FROM {} ".format(p_tbl_nm)
         sql += "WHERE delete_ts IS NULL;"
-        self.connect_dmain(self.ST.ConfigFields.main_db)
-        cur = self.dmain_conn.cursor()
-
-        pp(("sql", sql))
-
-        result = cur.execute(sql).fetchall()
-        data_recs = self.format_query_result(p_tbl_nm, result)
-        if len(data_recs) < 1:
-            data_recs = None
-        elif p_single:
-            data_recs = data_recs[0]
-        return data_recs
+        recs = self.execute_query_sql(p_tbl_nm, sql, p_single)
+        return recs
 
     def query_texts(self, p_single=True) -> dict:
         """Run read-only query against the texts table.
@@ -519,7 +548,7 @@ class Dbase(object):
         Returns:
             dict: of (namedtuples keyed by "data", "audit")
         """
-        return self.execute_query_sql("texts", p_single)
+        return self.format_query_sql("texts", p_single)
 
     def query_config(self, p_single=True) -> object:
         """Run read-only query against the user table.
@@ -530,7 +559,7 @@ class Dbase(object):
         Returns:
             dict: of (namedtuples keyed by "data", "audit")
         """
-        return self.execute_query_sql("config", p_single)
+        return self.format_query_sql("config", p_single)
 
     def query_config_data(self) -> namedtuple:
         cf = self.query_config()
@@ -546,7 +575,47 @@ class Dbase(object):
         Returns:
             dict: of (namedtuples keyed by "data", "audit")
         """
-        return self.execute_query_sql("user", p_single)
+        return self.format_query_sql("user", p_single)
+
+    def query_citizen_by_pid(self,
+                             p_pid: str) -> dict:
+        """Run read-only query against the citizen table.
+
+        Return latest non-deleted record that matches on PID.
+
+        Args:
+            p_pid (str): ErepFriends DB logical object identifier
+
+        Returns:
+            dict: of (namedtuples keyed by "data", "audit")
+        """
+        col_nms = self.ST.CitizenFields.keys() + self.ST.AuditFields.keys()
+        sql = "SELECT {}, MAX(update_ts) FROM {} ".format(", ".join(col_nms),
+                                                          "citizen")
+        sql += " WHERE pid = '{}'".format(str(p_pid))
+        sql += " AND delete_ts is NULL;"
+        recs = self.execute_query_sql("citizen", sql, p_single=True)
+        return recs
+
+    def query_citizen_by_profile_id(self,
+                                    p_profile_id: str) -> dict:
+        """Run read-only query against the citizen table.
+
+        Return latest non-deleted record that matches on profile ID.
+
+        Args:
+            p_profile_id (str): eRepublik Identifier for a citizen
+
+        Returns:
+            dict: of (namedtuples keyed by "data", "audit")
+        """
+        col_nms = self.ST.CitizenFields.keys() + self.ST.AuditFields.keys()
+        sql = "SELECT {}, MAX(update_ts) FROM {} ".format(", ".join(col_nms),
+                                                          "citizen")
+        sql += " WHERE profile_id = '{}'".format(str(p_profile_id))
+        sql += " AND delete_ts is NULL;"
+        recs = self.execute_query_sql("citizen", sql, p_single=True)
+        return recs
 
     def config_bkup_db(self,
                        p_bkup_db_path: str) -> tuple:

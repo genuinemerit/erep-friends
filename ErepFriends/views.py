@@ -34,26 +34,6 @@ class Views(object):
         self.tx, _ = CN.get_text_data()
         self.set_basic_interface()
         self.make_configs_editor()
-        # Next:
-        # Some simple help instructions
-            # More detailed suggestions on accumulating friends
-        # View log screen
-        # Verifications regarding logs, log level, backups, login credentials
-        # Gather friends list and populate friends table
-        # Schedule, or manually trigger backups
-        # Refactor update and delete logic
-        # Implement views (test out in DB;
-        #   instantiate as part of table set-up)
-        # Implement view-based queries
-        # Implement data refreshes
-        # Design, implement tools, reports, visualizations:
-            # Help designing in-game PM's
-            # Time-series reports on .. party members, militia members
-        # Look into methods for gathering IDs without having to be friends
-            # Buying (?) lists
-            # Gathering lists by residence (all in a country, all in game, etc.)
-        # Figure out what is going on with residenceCity
-            # and any other faulty attributes
 
     @dataclass
     class buffer:
@@ -150,9 +130,6 @@ class Views(object):
         """
         log_path = str(self.log_loc.get()).strip()
         log_level = str(self.log_lvl_val.get()).strip()
-
-        pp(("log_level: ", log_level))
-
         if CN.configure_log(log_path, log_level):
             return(self.tx.m_log_data,
                    self.tx.m_logging_on)

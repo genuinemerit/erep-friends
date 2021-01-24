@@ -38,12 +38,7 @@ class Controls(object):
     """Rules engine for eRepublik."""
 
     def __init__(self):
-        """Initialize Controls() object.
-
-        @DEV - Need to work on getting Logging turned on
-               when log credentials have already been
-               established / are not changed.
-        """
+        """Initialize Controls() object."""
         self.logme = False
 
     def check_python_version(self):
@@ -109,15 +104,23 @@ class Controls(object):
 
     def get_text_data(self):
         """Query data base for most current texts record."""
-        return self.convert_data_record(DB.query_texts())
+        return self.convert_data_record(
+            DB.query_texts())
 
     def get_config_data(self):
         """Query data base for most current config record."""
-        return self.convert_data_record(DB.query_config())
+        return self.convert_data_record(
+            DB.query_config())
 
     def get_database_user_data(self):
         """Query data base for most current user record, decrypted."""
-        return self.convert_data_record(DB.query_user())
+        return self.convert_data_record(
+            DB.query_user())
+
+    def get_citizen_data_by_id(self, p_profile_id: str):
+        """Query data base for most current citizen record."""
+        return self.convert_data_record(
+            DB.query_citizen_by_profile_id(p_profile_id))
 
     def enable_logging(self):
         """Assign log file location. Instantiate Logger object."""
@@ -218,7 +221,7 @@ class Controls(object):
                 self.erep_csrf_token = None
                 response = self.erep_rqst.get(p_cfd.erep_url)
                 if self.logme:
-                    msg = "Logout response/redirect text: " + response.text
+                    msg = "Logout response/redirect text saved to log dir"
                     self.LOG.write_log(ST.LogLevel.INFO, msg)
 
     def get_token(self, response_text: str):
@@ -252,10 +255,8 @@ class Controls(object):
         parse_text = response_text.split('"name":')
         parse_text = parse_text[1].split(",")
         id_info.user_name = parse_text[0].replace('"', '')
-        if self.logme and p_cfd.log_level == 'DEBUG':
-            msg = "CSRF Token:\t{}".format(self.erep_csrf_token)
-            self.LOG.write_log(ST.LogLevel.INFO, msg)
-            msg = "Login response:\n{}".format(response_text)
+        if self.logme:
+            msg = "Login response text saved to log dir"
             self.LOG.write_log(ST.LogLevel.INFO, msg)
         return id_info
 
@@ -578,7 +579,7 @@ class Controls(object):
                              p_erep_email: str,
                              p_erep_passw: str,
                              p_erep_apikey: str):
-        """Add user record to database.
+        """Add or updated user record on database.
 
         Args:
             p_profile_id (str): verified eRep citizen profile ID
@@ -593,15 +594,27 @@ class Controls(object):
         urec["user_erep_email"] = p_erep_email
         urec["user_erep_password"] = p_erep_passw
         urec["user_tools_api_key"] = p_erep_apikey
-        DB.write_db("add", "user", urec, p_pid=None)
+        _, usra = self.get_database_user_data()
+        if usra is None:
+            DB.write_db("add", "user", urec, p_pid=None)
+        else:
+            DB.write_db("upd", "user", urec, p_pid=usra.pid)
 
     def write_citizen_rec(self, p_citrec: dict):
-        """Add citizen record to database.
+        """Add or modify citizen record to database.
 
         Args:
             p_citrec (dict): mirrors ST.CitizenFields
         """
-        DB.write_db("add", "citizen", p_citrec, p_pid=None)
+        _, ctza = self.get_citizen_data_by_id(p_citrec["profile_id"])
+        if ctza is None:
+            DB.write_db("add", "citizen", p_citrec, p_pid=None)
+        else:
+
+            pp(("ctza", ctza))
+            pp(("ctza.pid", ctza.pid))
+
+            DB.write_db("upd", "citizen", p_citrec, p_pid=ctza.pid)
 
 # #######################################################
 
@@ -631,7 +644,8 @@ class Controls(object):
                                            headers=msg_headers,
                                            allow_redirects=False)
         if self.logme:
-            msg = "friends response code: {}".format(msg_response.status_code)
+            msg = "Get friends list request response code: "
+            msg += str(msg_response.status_code)
             self.LOG.write_log(ST.LogLevel.INFO, msg)
         with open(path.abspath(path.join(self.cfgd["data"].log_path,
                                          "friends_response")), "w") as f:
