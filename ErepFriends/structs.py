@@ -126,22 +126,22 @@ class Structs(object):
     class TextFields:
         """Define static text items."""
 
-        app_ttl: str = 'eRepublik Citizens Analysis'
-        cfg_ttl: str = 'ErepFriends Configuration'
-        connect_ttl: str = 'eRepublik Connections'
+        app_ttl: str = 'Analyze eRepublik Citizens Data'
+        cfg_ttl: str = 'Configure ErepFriends'
+        collect_ttl: str = 'Collect Citizen Data'
         m_file: str = 'File'
         m_save: str = 'Save'
         m_close: str = 'Close'
         m_quit: str = 'Exit'
         m_win: str = 'Windows'
-        m_cfg: str = 'Configure'
-        m_connect: str = 'Connect'
+        m_cfg: str = 'Configure ErepFriends'
+        m_collect: str = 'Collect Citizen Data'
         m_help: str = 'Help'
         m_docs: str = 'User Guide'
         m_about: str = 'About'
 
         m_cfg_lbl: str = 'Enter configuration choices,' +\
-                           'then select File-->Save'
+                         'then select File-->Save'
         m_logs: str = 'Log location'
         m_log_level: str = 'Log level'
         m_logs_btn: str = 'Select log path'
@@ -151,12 +151,22 @@ class Structs(object):
         m_passw: str = 'eRep Password'
         m_apikey: str = 'eRep Tools API Key'
 
+        m_getfriends: str = 'Refresh user friends list:'
+        m_getfriends_btn: str = 'POST Request and GETs'
+        m_getcit_byid: str = 'Get citizen data by ID:'
+        m_getcit_byid_btn: str = 'GET Request'
+        m_getcit_bynm: str = 'Get citizen data by Name:'
+        m_getcit_bynm_btn: str = 'GET Request'
+
         m_connect_lbl: str = 'Press button to verify credentials.' +\
-                               ' Then press button to refresh user profile.'
+                             ' Then press button to refresh user profile.'
         m_creds: str = 'Verify eRep credentials: '
         m_creds_btn: str = 'POST Login'
         m_profile: str = 'Refresh eRep profile data: '
         m_profile_btn: str = 'GET Data'
+        m_idf_loc: str = 'Read Profile IDs from file:'
+        m_idf_loc_set_btn: str = 'Set File'
+        m_idf_loc_get_btn: str = 'Read File'
 
         b_pick_file: str = "Select a file"
         b_set_log_path: str = "Set Log Path"

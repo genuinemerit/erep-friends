@@ -37,13 +37,12 @@ class Dbase(object):
     """
 
     def __init__(self, ST):
-        """Initialize Dbase object
+        """Initialize Dbase object.
 
         Args:
             ST (object): Instantiated Structs object
         """
         self.ST = ST
-
 
     class Types(object):
         """Define non-standard data types."""
@@ -181,15 +180,15 @@ class Dbase(object):
         audit_rec = p_audit_rec
         hash_str = ""
         for cnm, val in p_data_rec.items():
-            if cnm != "encrypt_key"\
-            and val not in (None, "None", ""):
+            if (cnm != "encrypt_key"
+                    and val not in (None, "None", "")):
                 hash_str += str(val)
         audit_rec["hash_id"] = UT.get_hash(hash_str)
         return(data_rec, audit_rec)
 
     def encrypt_data_values(self,
-                         p_data: dict) -> dict:
-        """Encrypt a data on a user table row.
+                            p_data: dict) -> dict:
+        """Encrypt data on user table row.
 
         Args:
             p_data (dict): mirrors "data" dataclass
@@ -199,8 +198,8 @@ class Dbase(object):
         """
         data_rec = p_data
         for cnm, val in p_data.items():
-            if cnm != "encrypt_key"\
-            and val not in (None, "None", ""):
+            if (cnm != "encrypt_key"
+                    and val not in (None, "None", "")):
                 data_rec[cnm] = CI.encrypt(str(val), p_data["encrypt_key"])
         return data_rec
 
@@ -218,7 +217,7 @@ class Dbase(object):
                              all latest rows that have a NULL delete_ts.
 
         Returns:
-            dict ("data": ..., "audit", ...) for user, config or texts
+            dict ("data": ..., "audit", ...) for user, config or texts    or
             list (of dicts like this ^) for citizen
         """
         db_recs = None
@@ -233,8 +232,8 @@ class Dbase(object):
         return db_recs
 
     def set_insert_data(self,
-                  p_tbl_nm: Types.tblnames,
-                  p_data: dict) -> tuple:
+                        p_tbl_nm: Types.tblnames,
+                        p_data: dict) -> tuple:
         """Format one logically new row for main database.
 
         Args:
@@ -266,9 +265,9 @@ class Dbase(object):
         return(data_rec, audit_rec)
 
     def set_upsert_data(self,
-                  p_tbl_nm: Types.tblnames,
-                  p_data: dict,
-                  p_pid: str) -> tuple:
+                        p_tbl_nm: Types.tblnames,
+                        p_data: dict,
+                        p_pid: str) -> tuple:
         """Format one logically updated row to main database.
 
         Do nothing if no value-changes are detected.
@@ -434,9 +433,9 @@ class Dbase(object):
         aud_keys = self.ST.AuditFields.keys()
         col_nms = dat_keys + aud_keys
         dat_dflt = self.ST.ConfigFields if p_tbl_nm == 'config'\
-                   else self.ST.UserFields if p_tbl_nm == 'user'\
-                   else self.ST.TextFields if p_tbl_nm == 'texts'\
-                   else self.ST.CitizenFields
+            else self.ST.UserFields if p_tbl_nm == 'user'\
+            else self.ST.TextFields if p_tbl_nm == 'texts'\
+            else self.ST.CitizenFields
         max_ix = len(col_nms) - 1
 
         for rx, in_row in enumerate(p_result):
@@ -461,7 +460,7 @@ class Dbase(object):
     def execute_query_sql(self,
                           p_tbl_nm: Types.tblnames,
                           p_sql: str,
-                          p_single: bool =True):
+                          p_single: bool = True):
         """Execute a SELECT query, with option to return only latest row.
 
         Args:
@@ -486,8 +485,8 @@ class Dbase(object):
         return data_recs
 
     def format_query_sql(self,
-                          p_tbl_nm: Types.tblnames,
-                          p_single: bool = True):
+                         p_tbl_nm: Types.tblnames,
+                         p_single: bool = True):
         """Format a SELECT query, with option to return only latest row.
 
         Use this for all tables except citizen, which has different
@@ -511,7 +510,7 @@ class Dbase(object):
         if p_single:
             sql += "MAX(update_ts)"
         else:
-            sql = sql[:-2] # remove trailing comma and space
+            sql = sql[:-2]      # remove trailing comma and space
         sql += " FROM {} ".format(p_tbl_nm)
         sql += "WHERE delete_ts IS NULL;"
         recs = self.execute_query_sql(p_tbl_nm, sql, p_single)
@@ -540,6 +539,7 @@ class Dbase(object):
         return self.format_query_sql("config", p_single)
 
     def query_config_data(self) -> namedtuple:
+        """Query config info. Return only 'data' section as namedtuple."""
         cf = self.query_config()
         cfd = UT.make_namedtuple("cfd", cf["data"])
         return cfd
@@ -654,8 +654,8 @@ class Dbase(object):
           overwrites it.
         """
         cfd = self.query_config_data()
-        if cfd.bkup_db\
-        and cfd.bkup_db not in (None, 'None'):
+        if (cfd.bkup_db
+                and cfd.bkup_db not in (None, 'None')):
             self.connect_dmain(cfd.main_db)
             self.connect_dbkup(cfd.bkup_db)
             self.dmain_conn.backup(self.dbkup_conn, pages=0, progress=None)
@@ -669,8 +669,8 @@ class Dbase(object):
         Use this to make a point-in-time copy or prior to doing a purge.
         """
         cfd = self.query_config_data()
-        if cfd.arcv_db\
-        and cfd.arcv_db not in (None, 'None'):
+        if (cfd.arcv_db
+                and cfd.arcv_db not in (None, 'None')):
             dttm = UT.get_dttm('UTC')
             arcv_db = cfd.arcv_db + "." + dttm.curr_ts
             self.connect_dmain(cfd.main_db)
@@ -679,7 +679,7 @@ class Dbase(object):
             self.disconnect_dmain()
             self.disconnect_darcv()
 
-    # ================  snippet code =========================
+    # ================  untested code =========================
 
     def destroy_db(self, db_path: str) -> bool:
         """Delete the specified database file.
@@ -744,76 +744,3 @@ class Dbase(object):
         self.purge_rows(cur, pid_list)
         self.dmain_conn.commit()
         self.disconnect_dmain()
-
-    def query_citizen(self,
-                      p_filter: dict = None) -> list:
-        """Run read-only queries against the citizen table.
-
-        - AND logic is is used when multiple colums are queried.
-        - No JOIN or OR logic supported.
-        - GROUP BY is triggered by a search value of 'LIST'.
-
-        Args:
-            p_filter (dict, optional): Required for citizen, only for citizen.
-                Using col-names from self.ST.DBSCHEMA, specify 1..n columns and
-                paired values. Or, single col-nm with value = "LIST".
-
-        Returns:
-            list: of dataclass objects containing query results  or  empty
-        """
-        sql = "SELECT {}, MAX(update_ts) FROM {} ".format(", ".join(col_nms),
-                                                          "citizen")
-        sql = self.query_citizen_more(sql)
-        cfd = self.query_config_data()
-        self.connect_dmain(cfd.main_db)
-        cur = self.dmain_conn.cursor()
-        result = cur.execute(sql).fetchall()
-        user_rec = self.format_query_result("citizen", result)
-        return user_rec
-
-    def query_citizen_more(self, p_sql: str,
-                           p_filter: dict) -> str:
-        """Build SQL to do read query on the citizen table.
-
-        - Read citizen table by:
-            - uid =
-            - name =
-            - profile_id =
-            - party_name =
-            - militia_name =
-            - level =
-            - xp =
-            - or any AND combination of the above
-            ... where delete_ts is NULL and MAX(update_ts)
-            ... and return all columns
-        - List unique values from citizen table for:
-            (same columns as above)
-            ... where delete_ts is NULL and MAX(update_ts)
-
-        Args:
-            p_filter (dict): name/values to filter on
-            p_sql (str): partially built SQL string
-
-        Raises:
-            Exception: IOError if mal-formed "LIST" request
-
-        Returns:
-            str: built-out SQL string with WHERE logic
-        """
-        sql = p_sql
-        where_sql = list()
-        for col_nm, col_val in p_filter.items():
-            if col_val.upper() == "LIST" and len(list(p_filter.keys())) > 1:
-                msg = "LIST must be singleton request"
-                raise Exception(IOError, msg)
-            where_sql.append(" {} = '{}'".format(col_nm, col_val))
-        if len(where_sql) > 1:
-            sql += "WHERE {}".format("AND ".join(where_sql))
-            sql += " AND delete_ts IS NULL;"
-        else:
-            col_nm = list(p_filter.keys())[0]
-            sql = "SELECT {}, ".format(col_nm)
-            sql += "COUNT({}), MAX(update_ts) ".format(col_nm)
-            sql += "FROM citizen WHERE delete_ts IS NULL"
-            sql += " GROUP BY {};".format(col_nm)
-        return sql

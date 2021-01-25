@@ -268,7 +268,8 @@ class Controls(object):
     def verify_citizen_credentials(self,
                                    p_email: str,
                                    p_password: str,
-                                   p_use_response_file: bool) -> str:
+                                   p_use_response_file: bool,
+                                   p_logout: bool = True) -> str:
         """Login to eRepublik to confirm credentials and get profile ID.
 
         Args:
@@ -276,6 +277,8 @@ class Controls(object):
             p_password (str): User login password
             p_use_response_file (bool): If True, use response text file input
               if it exists.  Write response text if connecting to erep.
+            p_logout (bool): If True, logout at end of method, else do not logout.
+                             Optional. Default is True.
 
         Returns:
             text: full response.text from eRep login GET  or  None
@@ -437,12 +440,15 @@ class Controls(object):
             self.convert_val(
                 profile_data["location"]["citizenshipCountry"]["name"])
         if "city" in profile_data.keys():
-            citrec["residence_city"] = self.convert_val(
-                profile_data["city"]["residenceCity"]["name"])
-            citrec["residence_region"] = self.convert_val(
-                profile_data["city"]["residenceCity"]["region_name"])
-            citrec["residence_country"] = self.convert_val(
-                profile_data["city"]["residenceCity"]["country_name"])
+            # Can also check for residenceCityId == null
+            if "residenceCity" in profile_data["city"].keys():
+                # May want to add city-level avatar...
+                citrec["residence_city"] = self.convert_val(
+                    profile_data["city"]["residenceCity"]["name"])
+                citrec["residence_region"] = self.convert_val(
+                    profile_data["city"]["residenceCity"]["region_name"])
+                citrec["residence_country"] = self.convert_val(
+                    profile_data["city"]["residenceCity"]["country_name"])
         return citrec
 
     def get_citizen_party_data(self,
@@ -640,17 +646,27 @@ class Controls(object):
         """Send PM-posting request to eRepublik.
 
         The PM Posting request will fail due to captcha's.
-        But we are really doing this in order to pull in the
-         friends list, which shows up in the response.
+        But that's OK. We are really doing this in order to
+        pull in the full friends list, which shows up in the
+        response. A regular profile request only returns the
+        first 20 friends.
+
+        Always do a real login (not using file) prior to
+        running this method because CSRF token must be accurate.
 
         Args:
             profile_id (str): citizen ID
         Returns:
             response text
         """
+        cfd, _ = self.get_config_data()
+        usrd, _ = self.get_database_user_data()
+        self.verify_citizen_credentials(usrd.user_erep_email,
+                                        usrd.user_erep_password,
+                                        p_use_response_file=False,
+                                        p_logout=False)
         msg_url =\
-            "{}/main/messages-compose/{}".format(self.cfgd["data"].erep_url,
-                                                 profile_id)
+            "{}/main/messages-compose/{}".format(cfd.erep_url, profile_id)
         msg_headers = {
             "Referer": msg_url,
             "X-Requested-With": "XMLHttpRequest"}
@@ -666,40 +682,41 @@ class Controls(object):
             msg = "Get friends list request response code: "
             msg += str(msg_response.status_code)
             self.LOG.write_log(ST.LogLevel.INFO, msg)
-        with open(path.abspath(path.join(self.cfgd["data"].log_path,
+        with open(path.abspath(path.join(cfd.log_path,
                                          "friends_response")), "w") as f:
             f.write(msg_response.text)
+        self.logout_erep(cfd)
         return msg_response.text
 
     def get_friends_data(self, profile_id: str):
         """Get friends list.
 
         Read local cached copy of previous response if it exists.
-        @DEV - make this an option once GUI is in place
-        Otherwise make a bogus attempt to send an in-game PM.
+
+        @DEV -- add option to refresh from erep / don't use file
 
         Args:
             profile_id (str): citizen ID, etc.
         """
-        friends_file = path.abspath(path.join(self.cfgd["data"].log_path,
+        cfd, _ = self.get_config_data()
+        friends_file = path.abspath(path.join(cfd.log_path,
                                               "friends_response"))
         if Path(friends_file).exists():
             with open(friends_file) as ff:
                 friends_data = ff.read()
+            if self.logme:
+                msg = "Using cached friends_response"
+                self.LOG.write_log(ST.LogLevel.INFO, msg)
         else:
             friends_data = self.request_friends_list(profile_id)
-        # parse friends data file or response
         friends_data = friends_data.replace("\t", "").replace("\n", "")
         friends_data = friends_data.split('$j("#citizen_name").tokenInput(')
         friends_data = friends_data[1].split(', {prePopulate:')
         friends_data = json.loads(friends_data[0])
-
         for friend in friends_data:
             print("Getting profile for {} ... ".format(friend["name"]))
-            # eventually, modify this to return a dict
-            citrec = self.get_citizen_profile(friend["id"])
-            citizen_rec = dict()
-            for cnm in ST.CitizensFields.keys():
-                citizen_rec[cnm] = copy(getattr(citrec, cnm))
-            DB.write_db("add", "citizen", citizen_rec, None, False)
+            citizen_rec = self.get_citizen_profile(friend["id"],
+                                                   p_use_file=False)
+            DB.write_db("add", "citizen", citizen_rec, None)
             time.sleep(.300)
+        print("*** Done ***")
