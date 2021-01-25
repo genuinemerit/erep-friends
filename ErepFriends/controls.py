@@ -167,11 +167,13 @@ class Controls(object):
         self.enable_logging()
         return self.logme
 
-    def configure_backups(self, p_bkup_db_path: str):
+    def configure_backups(self, p_bkup_db_path: str) -> bool:
         """Set location of backup and archive databases. Initialize them.
 
         Args:
             p_bkup_db_path (string) path to parent dir of db backup files
+        Returns:
+            True if backup DB was configured. (Method does not fail.)
         """
         cfd, cfa = self.get_config_data()
         bkup_db_path, bkup_db = DB.config_bkup_db(p_bkup_db_path)
@@ -182,6 +184,7 @@ class Controls(object):
         data_rec["arcv_db"] = bkup_db
         DB.write_db('upd', 'config', data_rec, cfa.pid)
         DB.backup_db()
+        return True
 
     def logout_erep(self,
                     p_cfd: namedtuple):
@@ -608,14 +611,14 @@ class Controls(object):
                        p_profile_id: str,
                        p_erep_email: str,
                        p_erep_passw: str,
-                       p_erep_apikey: str):
-        """Add or updated user record on database.
+                       p_erep_apikey: str = None):
+        """Add or update user record on database.
 
         Args:
-            p_profile_id (str): verified eRep citizen profile ID
-            p_erep_email (str): verified eRep login email address
-            p_erep_passw (str): verified eRep login password
-            p_erep_apikey (str): eRep Tools API key
+            p_profile_id (str): verified eRep citizen profile ID.
+            p_erep_email (str): verified eRep login email address.
+            p_erep_passw (str): verified eRep login password.
+            p_erep_apikey (str): eRep Tools API key. Optional.
         """
         urec = dict()
         for cnm in ST.UserFields.keys():
@@ -623,7 +626,8 @@ class Controls(object):
         urec["user_erep_profile_id"] = p_profile_id
         urec["user_erep_email"] = p_erep_email
         urec["user_erep_password"] = p_erep_passw
-        urec["user_tools_api_key"] = p_erep_apikey
+        if p_erep_apikey is not None:
+            urec["user_tools_api_key"] = p_erep_apikey
         _, usra = self.get_database_user_data()
         if usra is None:
             DB.write_db("add", "user", urec, p_pid=None)

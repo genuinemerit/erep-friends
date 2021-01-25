@@ -144,9 +144,8 @@ class Structs(object):
                          'then select File-->Save'
         m_logs: str = 'Log location'
         m_log_level: str = 'Log level'
-        m_logs_btn: str = 'Select log path'
         m_bkups: str = 'Backup DBs location'
-        m_bkups_btn: str = 'Select DB backups path'
+        m_bkups_btn: str = 'Set backups path'
         m_email: str = 'eRep Email Login'
         m_passw: str = 'eRep Password'
         m_apikey: str = 'eRep Tools API Key'
@@ -170,7 +169,11 @@ class Structs(object):
 
         b_pick_file: str = "Select a file"
         b_set_log_path: str = "Set Log Path"
-        b_set_dbkup_path: str = "Set DB Backup Path"
+        b_set_dbkup_path: str = "Set backups path"
+        b_save_log_btn: str = "Update log config"
+        b_save_bkups_btn: str = "Update backups config"
+        b_save_creds_btn: str = "Verify/Update eRep login"
+        b_save_apikey_btn: str = "Verify/Update API key"
 
         m_info_ttl: str = "Information"
         m_warn_ttl: str = "Warning"
@@ -180,6 +183,7 @@ class Structs(object):
         m_bkup_data: str = "DB backup data updated."
         m_bkups_on: str = "Backup and Archive databases enabled."
         m_user: str = "User verified."
+        m_user_key: str = "Tried using the API key."
         m_user_data: str = "User credentials and profile stored."
         m_user_key_ok: str = "User eRep Tools API key verified."
         m_user_key_not_ok: str = "User eRep Tools API key FAILED verification."
@@ -212,6 +216,7 @@ class Structs(object):
 
         profile_id: str = None
         name: str = None
+        is_user_friend: str = None
         is_alive: str = None
         is_adult: str = None
         avatar_link: str = None

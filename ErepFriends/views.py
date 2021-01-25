@@ -37,6 +37,7 @@ class Views(object):
         self.tx, _ = CN.get_text_data()
         self.set_basic_interface()
         if not self.check_user():
+            self.disable_menu_item(self.tx.m_win, self.tx.m_collect)
             self.make_configs_editor()
 
     @dataclass
@@ -54,13 +55,13 @@ class Views(object):
             p_item (str): Name of the menu item
         """
         if p_menu == self.tx.m_file:
-            if p_item == self.tx.m_save:
+            if p_item == self.tx.m_close:
                 self.file_menu.entryconfig(0, state="normal")
-            elif p_item == self.tx.m_close:
-                self.file_menu.entryconfig(1, state="normal")
         elif p_menu == self.tx.m_win:
             if p_item == self.tx.m_cfg:
                 self.win_menu.entryconfig(0, state="normal")
+            if p_item == self.tx.m_collect:
+                self.win_menu.entryconfig(1, state="normal")
 
     def disable_menu_item(self, p_menu: str, p_item: str):
         """Disable a menu item.
@@ -70,13 +71,13 @@ class Views(object):
             p_item (str): Name of the menu item
         """
         if p_menu == self.tx.m_file:
-            if p_item == self.tx.m_save:
+            if p_item == self.tx.m_close:
                 self.file_menu.entryconfig(0, state="disabled")
-            elif p_item == self.tx.m_close:
-                self.file_menu.entryconfig(1, state="disabled")
         elif p_menu == self.tx.m_win:
             if p_item == self.tx.m_cfg:
                 self.win_menu.entryconfig(0, state="disabled")
+            if p_item == self.tx.m_collect:
+                self.win_menu.entryconfig(1, state="disabled")
 
     def update_msg(self,
                    msg: str, detail: str,
@@ -84,8 +85,10 @@ class Views(object):
         """Format result messages.
 
         Args:
-            mm (str): short message
-            dd (str): detailed message
+            msg (str): previous msgs
+            detail (str): previous detail
+            mm (str): short message to add
+            dd (str): detailed message to add
         Returns:
             tuple: (str: msg, str: detail)
         """
@@ -122,36 +125,29 @@ class Views(object):
         self.enable_menu_item(self.tx.m_win, self.tx.m_cfg)
         self.enable_menu_item(self.tx.m_win, self.tx.m_collect)
         self.disable_menu_item(self.tx.m_file, self.tx.m_close)
-        self.disable_menu_item(self.tx.m_file, self.tx.m_save)
         setattr(self.buffer, 'current_frame', None)
         self.win_root.title(self.tx.app_ttl)
 
-    def save_log_path(self) -> tuple:
-        """Handle updates to log info.
-
-        Returns:
-            tuple(str: brief_msg, str: detailed_msg)
-        """
+    def save_log_config(self):
+        """Handle updates to log info."""
         log_path = str(self.log_loc.get()).strip()
         log_level = str(self.log_lvl_val.get()).strip()
-        if CN.configure_log(log_path, log_level):
-            return(self.tx.m_log_data,
-                   self.tx.m_logging_on)
-        else:
-            return("", "")
+        logging_on = CN.configure_log(log_path, log_level)
+        if logging_on:
+            msg, detail = self.update_msg("", "",
+                                          self.tx.m_log_data,
+                                          self.tx.m_logging_on)
+            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
-    def save_bkup_path(self) -> tuple:
-        """Handle updates to DB backup paths.
-
-        Returns:
-            tuple(str: brief_msg, str: detailed_msg)
-        """
+    def save_bkup_config(self) -> tuple:
+        """Handle updates to DB backup paths."""
         bkup_db_path = str(self.bkup_loc.get()).strip()
-        if CN.configure_backups(bkup_db_path):
-            return(self.tx.m_bkup_data,
-                   self.tx.m_bkups_on)
-        else:
-            return("", "")
+        backups_configd = CN.configure_backups(bkup_db_path)
+        if backups_configd:
+            msg, detail = self.update_msg("", "",
+                                          self.tx.m_bkup_data,
+                                          self.tx.m_bkups_on)
+            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def check_user(self) -> bool:
         """See if user record already exists.
@@ -164,58 +160,44 @@ class Views(object):
             return False
         else:
             CN.enable_logging()
+            self.enable_menu_item(self.tx.m_win, self.tx.m_collect)
             self.make_user_image()
             return True
 
-    def save_user_data(self) -> tuple:
-        """Handle updates to user credentials and basic info.
-
-        Returns:
-            tuple(str: brief_msg, str: detailed_msg)
-        """
+    def save_user_config(self) -> tuple:
+        """Handle updates to user credentials."""
         erep_email = str(self.email.get()).strip()
         erep_passw = str(self.passw.get()).strip()
-        erep_apikey = str(self.apikey.get()).strip()
         if erep_email and erep_passw:
             id_info = CN.verify_citizen_credentials(erep_email,
                                                     erep_passw, True)
-            CN.write_user_rec(id_info.profile_id, erep_email,
-                              erep_passw, erep_apikey)
+            CN.write_user_rec(id_info.profile_id, erep_email, erep_passw)
             citzn_rec = CN.get_citizen_profile(id_info.profile_id, True)
             CN.write_citizen_rec(citzn_rec)
-            return_detail = self.tx.connected + "\n" +\
-                self.tx.m_user_data + "\n"
-            if erep_apikey:
-                if CN.verify_api_key(id_info.profile_id, erep_apikey):
-                    return_detail += self.tx.m_user_key_ok + "\n"
+            detail = self.tx.connected + "\n" + self.tx.m_user_data + "\n"
+            detail += self.tx.greet.replace("[user]", id_info.user_name)
+            msg, detail = self.update_msg("", "", self.tx.m_user, detail)
+            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
+            self.check_user()
+
+    def save_apikey_config(self):
+        """Handle updates to user API Key."""
+        erep_apikey = str(self.apikey.get()).strip()
+        if erep_apikey:
+            usrd, _ = CN.get_database_user_data()
+            if usrd is not None:
+                if CN.verify_api_key(usrd.user_erep_profile_id, erep_apikey):
+                    detail = self.tx.m_user_key_ok
+                    CN.write_user_rec(usrd.user_erep_profile_id,
+                                      usrd.user_erep_email,
+                                      usrd.user_erep_password,
+                                      erep_apikey)
                 else:
-                    return_detail += self.tx.m_user_key_not_ok + "\n"
-            return_detail +=\
-                self.tx.greet.replace("[user]", id_info.user_name)
-            return(self.tx.m_user, return_detail)
-        else:
-            return("", "")
-
-    def save_data(self):
-        """Write values to config file and/or database.
-
-        For values left empty on the form or unchanged from
-        existing configurations, do nothing.  Except for user
-        ID and pwd. If it is entered, then always refresh.
-        """
-        if self.buffer.current_frame == "config":
-            msg, detail = ("", "")
-            rslt = list()
-            rslt.append(self.save_log_path())
-            rslt.append(self.save_bkup_path())
-            rslt.append(self.save_user_data())
-            for result in rslt:
-                msg, detail = self.update_msg(msg, detail,
-                                              result[0], result[1])
-            self.close_frame()
-            if msg is not None:
-                self.make_message(self.ST.MsgLevel.INFO, msg, detail)
-                self.check_user()
+                    detail += self.tx.m_user_key_not_ok
+            else:
+                detail += self.tx.m_user_key_not_ok
+            msg, detail = self.update_msg("", "", self.tx.m_user_key, detail)
+            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def select_log_dir(self):
         """Browse for a log directory."""
@@ -272,9 +254,9 @@ class Views(object):
         def set_context():
             setattr(self.buffer, 'current_frame', 'connect')
             self.win_root.title(self.tx.collect_ttl)
-            self.disable_menu_item(self.tx.m_win, self.tx.m_collect)
-            self.disable_menu_item(self.tx.m_file, self.tx.m_save)
             self.enable_menu_item(self.tx.m_file, self.tx.m_close)
+            self.disable_menu_item(self.tx.m_win, self.tx.m_collect)
+            self.enable_menu_item(self.tx.m_win, self.tx.m_cfg)
             self.collect_frame = tk.Frame(self.win_root,
                                           width=400, padx=5, pady=5)
             self.collect_frame.grid(sticky=tk.N)
@@ -392,10 +374,9 @@ class Views(object):
             """Set root and frame. Enable/disable menu items."""
             setattr(self.buffer, 'current_frame', 'config')
             self.win_root.title(self.tx.cfg_ttl)
-            self.disable_menu_item(self.tx.m_win, self.tx.m_cfg)
-            self.disable_menu_item(self.tx.m_win, self.tx.m_collect)
-            self.enable_menu_item(self.tx.m_file, self.tx.m_save)
             self.enable_menu_item(self.tx.m_file, self.tx.m_close)
+            self.disable_menu_item(self.tx.m_win, self.tx.m_cfg)
+            self.enable_menu_item(self.tx.m_win, self.tx.m_collect)
             self.cfg_frame = tk.Frame(self.win_root,
                                       width=400, padx=5, pady=5)
             self.cfg_frame.grid(sticky=tk.N)
@@ -408,7 +389,7 @@ class Views(object):
             log_label.grid(row=1, column=0, sticky=tk.E, padx=5)
             loglvl_label = ttk.Label(self.cfg_frame,
                                      text=self.tx.m_log_level)
-            loglvl_label.grid(row=2, column=0, sticky=tk.E)
+            loglvl_label.grid(row=2, column=0, sticky=tk.E, padx=5)
             bkup_label = ttk.Label(self.cfg_frame, text=self.tx.m_bkups)
             bkup_label.grid(row=3, column=0, sticky=tk.E, padx=5)
             email_label = ttk.Label(self.cfg_frame, text=self.tx.m_email)
@@ -427,9 +408,9 @@ class Views(object):
                 log_path_val = tk.StringVar(self.cfg_frame)
                 log_path_val.set(cf_dflt["log_loc"])
                 self.log_loc.insert(0, log_path_val.get())
-                self.log_loc.grid(row=1, column=1, sticky=tk.W)
+                self.log_loc.grid(row=1, column=1, sticky=tk.W, padx=5)
                 self.log_loc_btn = ttk.Button(self.cfg_frame,
-                                              text=self.tx.m_logs_btn,
+                                              text=self.tx.b_set_log_path,
                                               command=self.select_log_dir)
                 self.log_loc_btn.grid(row=1, column=2, sticky=tk.W, padx=5)
 
@@ -444,6 +425,10 @@ class Views(object):
                                                self.log_lvl_val,
                                                *self.ST.LogLevel.keys())
                 self.log_level.grid(row=2, column=1, sticky=tk.W, padx=5)
+                self.log_save_btn = ttk.Button(self.cfg_frame,
+                                               text=self.tx.b_save_log_btn,
+                                               command=self.save_log_config)
+                self.log_save_btn.grid(row=2, column=3, sticky=tk.W, padx=5)
 
             def set_db_bkup_loc_input():
                 """Location for DB backup and archive files."""
@@ -451,11 +436,15 @@ class Views(object):
                 bkup_path_val = tk.StringVar(self.cfg_frame)
                 bkup_path_val.set(cf_dflt["bkup_path"])
                 self.bkup_loc.insert(0, bkup_path_val.get())
-                self.bkup_loc.grid(row=3, column=1, sticky=tk.W)
+                self.bkup_loc.grid(row=3, column=1, sticky=tk.W, padx=5)
                 self.bkup_loc_btn = ttk.Button(self.cfg_frame,
-                                               text=self.tx.m_bkups_btn,
+                                               text=self.tx.b_set_dbkup_path,
                                                command=self.select_bkup_dir)
                 self.bkup_loc_btn.grid(row=3, column=2, sticky=tk.W, padx=5)
+                self.bkups_save_btn = ttk.Button(self.cfg_frame,
+                                                 text=self.tx.b_save_bkups_btn,
+                                                 command=self.save_bkup_config)
+                self.bkups_save_btn.grid(row=3, column=3, sticky=tk.W, padx=5)
 
             def set_erep_email_input():
                 """User's eRepublik login email credential."""
@@ -472,6 +461,10 @@ class Views(object):
                 passw_val.set(usr_dflt["passw"])
                 self.passw.insert(0, passw_val.get())
                 self.passw.grid(row=5, column=1, sticky=tk.W, padx=5)
+                self.creds_save_btn = ttk.Button(self.cfg_frame,
+                                                 text=self.tx.b_save_creds_btn,
+                                                 command=self.save_user_config)
+                self.creds_save_btn.grid(row=5, column=3, sticky=tk.W, padx=5)
 
             def set_apikey_input():
                 """User's eRepublik Tools API key. Hidden input."""
@@ -480,6 +473,10 @@ class Views(object):
                 apikey_val.set(usr_dflt["apikey"])
                 self.apikey.insert(0, apikey_val.get())
                 self.apikey.grid(row=6, column=1, sticky=tk.W, padx=5)
+                self.apikey_save_btn = ttk.Button(self.cfg_frame,
+                                                  text=self.tx.b_save_apikey_btn,
+                                                  command=self.save_apikey_config)
+                self.apikey_save_btn.grid(row=6, column=3, sticky=tk.W, padx=5)
 
             set_log_loc_input()
             set_log_level_input()
@@ -539,8 +536,6 @@ class Views(object):
         self.file_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label=self.tx.m_file,
                                   menu=self.file_menu)
-        self.file_menu.add_command(label=self.tx.m_save,
-                                   command=self.save_data, state="disabled")
         self.file_menu.add_command(label=self.tx.m_close,
                                    command=self.close_frame, state="disabled")
         self.file_menu.add_command(label=self.tx.m_quit,

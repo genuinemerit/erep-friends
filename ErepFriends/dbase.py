@@ -393,7 +393,8 @@ class Dbase(object):
         data_keys = self.ST.UserFields.keys()
         data_keys.remove("encrypt_key")
         for cnm in data_keys:
-            user_data[cnm] = CI.decrypt(user_data[cnm], encrypt_key)
+            if user_data[cnm] and user_data[cnm] not in (None, "None", ""):
+                user_data[cnm] = CI.decrypt(user_data[cnm], encrypt_key)
         return(user_data)
 
     def format_query_result(self,
