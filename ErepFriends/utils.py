@@ -16,7 +16,6 @@ from copy import copy
 from pprint import pprint as pp  # noqa: F401
 
 import arrow
-from pytz import all_timezones
 
 from structs import Structs
 
@@ -111,16 +110,17 @@ class Utils(object):
             'spacecraft', 'species', 'stuff', 'sugar', 'tongs', 'trousers',
             'you', 'wheat', 'wood')
         plural = p_singular
-        if not p_singular or p_singular.strip() == ''\
-           or p_singular[-2:].lower()\
-           in ('es', 'ds', 'hs', 'ks', 'ms', 'ps', 'ts')\
-           or p_singular.lower() in sing_is_plural:
+        if (not p_singular or p_singular.strip() == ''
+                or p_singular[-2:].lower()
+                in ('es', 'ds', 'hs', 'ks', 'ms', 'ps', 'ts')
+                or p_singular.lower() in sing_is_plural):
             pass
-        elif p_singular[-1:].lower() in ('s', 'x')\
-         or p_singular[-2:].lower() in ('ch'):
+        elif (p_singular[-1:].lower() in ('s', 'x')
+                or p_singular[-2:].lower() in ('ch')):
             plural = p_singular + "es"
-        elif p_singular[-1:].lower() == 'y'\
-         and p_singular[-2:1].lower() not in ('a', 'e', 'i', 'o', 'u'):
+        elif (p_singular[-1:].lower() == 'y'
+                and p_singular[-2:1].lower()
+                not in ('a', 'e', 'i', 'o', 'u')):
             plural = p_singular[:-1] + "ies"
         else:
             plural = p_singular + "s"
@@ -192,7 +192,7 @@ class Utils(object):
         return (cmd_rc, cmd_result)
 
     def exec_bash(self, p_cmd_list: list) -> str:
-        """Run a series of one or more OS commands.
+        """Run a series of one or more OS (bash) commands.
 
         Args:
             p_cmd_list (list) of strings formatted correctly as OS commands
@@ -207,7 +207,7 @@ class Utils(object):
         return result
 
     def get_uid(self, p_uid_length: int = None) -> str:
-        """Generate a  URL safe cryptographically strong random value.
+        """Generate a URL-safe, cryptographically strong random value.
 
         Not a hash.  Just a unique identifier for any purpose, such as
         unique PK for a database.
@@ -225,7 +225,7 @@ class Utils(object):
         return uid_val
 
     def get_home(self) -> str:
-        """Get name of the user's home directory
+        """Get name of the user's home directory.
 
         Returns:
             str: path to $HOME

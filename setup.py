@@ -25,7 +25,7 @@ setup(
     version=VERSION,
     author="Phoenix Quinn",
     author_email="pq_rfw@pm.me",
-    description="eRepublik Friends Manager",
+    description="eRepublik Citizens Data Analytics",
     long_description_content_type="text/markdown",
     long_description=README,
     url="https://github.com/genuinemerit/erep-friends.git",

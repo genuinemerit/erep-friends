@@ -11,7 +11,7 @@ Author:    PQ <pq_rfw @ pm.me>
 import tkinter as tk
 from dataclasses import dataclass
 from pprint import pprint as pp  # noqa: F401
-from tkinter import filedialog, messagebox, ttk  # noqa: F401
+from tkinter import messagebox, ttk
 
 import requests
 from PIL import Image, ImageTk
@@ -38,7 +38,7 @@ class Views(object):
         self.set_basic_interface()
         if not self.check_user():
             self.disable_menu_item(self.tx.m_win, self.tx.m_collect)
-            self.make_configs_editor()
+            self.make_config_frame()
 
     @dataclass
     class buffer:
@@ -193,9 +193,9 @@ class Views(object):
                                       usrd.user_erep_password,
                                       erep_apikey)
                 else:
-                    detail += self.tx.m_user_key_not_ok
+                    detail = self.tx.m_user_key_not_ok
             else:
-                detail += self.tx.m_user_key_not_ok
+                detail = self.tx.m_user_key_not_ok
             msg, detail = self.update_msg("", "", self.tx.m_user_key, detail)
             self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
@@ -216,8 +216,7 @@ class Views(object):
     def collect_friends(self):
         """Login to and logout of erep using user credentials."""
         usrd, _ = CN.get_database_user_data()
-        # @DEV -- add option to refresh from erep / don't use file
-        CN.get_friends_data(usrd.user_erep_profile_id)
+        CN.set_friends_list_input_data(usrd.user_erep_profile_id)
 
     def get_citizen_by_id(self):
         """Get user profile data from eRepublik."""
@@ -243,16 +242,10 @@ class Views(object):
 
     # Constructors
 
-    def make_lists_collector(self):
-        """Construct frame for collecting profile IDs.
-
-        @DEV
-        - Option to pull in / refresh from friends list
-        - Option to pull in / refresh a single profile ID
-        - Option to pull in / refresh from a local list of profile IDs
-        """
+    def make_collect_frame(self):
+        """Construct frame for collecting profile IDs and citizen data."""
         def set_context():
-            setattr(self.buffer, 'current_frame', 'connect')
+            setattr(self.buffer, 'current_frame', 'collect')
             self.win_root.title(self.tx.collect_ttl)
             self.enable_menu_item(self.tx.m_file, self.tx.m_close)
             self.disable_menu_item(self.tx.m_win, self.tx.m_collect)
@@ -264,9 +257,11 @@ class Views(object):
             self.win_root.grid_columnconfigure(1, weight=1)
 
         def set_labels():
-            get_friends_label = ttk.Label(self.collect_frame,
-                                          text=self.tx.m_getfriends)
-            get_friends_label.grid(row=1, column=0, sticky=tk.E, padx=5)
+            set_friends_list_input_label =\
+                ttk.Label(self.collect_frame,
+                          text=self.tx.m_getfriends)
+            set_friends_list_input_label.grid(row=1, column=0,
+                                              sticky=tk.E, padx=5)
             get_citz_by_id_label = ttk.Label(self.collect_frame,
                                              text=self.tx.m_getcit_byid)
             get_citz_by_id_label.grid(row=2, column=0, sticky=tk.E, padx=5)
@@ -279,7 +274,7 @@ class Views(object):
 
         def set_inputs():
 
-            def get_friends():
+            def set_friends_list_input():
                 """Collect / refresh friends data."""
                 self.friends_btn =\
                     ttk.Button(self.collect_frame,
@@ -288,7 +283,7 @@ class Views(object):
                                state=tk.NORMAL)
                 self.friends_btn.grid(row=1, column=1, sticky=tk.W, padx=5)
 
-            def get_citzn_by_id():
+            def set_ctzn_by_id_input():
                 """Refresh one citizen by ID."""
                 self.citz_byid = ttk.Entry(self.collect_frame, width=25)
                 # citz_byid_val = tk.StringVar(self.collect_frame)
@@ -300,7 +295,7 @@ class Views(object):
                                state=tk.NORMAL)
                 self.citz_by_id_btn.grid(row=2, column=2, sticky=tk.W, padx=5)
 
-            def get_citzn_by_nm():
+            def set_ctzn_by_nm_input():
                 """Refresh one citizen by Name."""
                 usrd, _ = CN.get_database_user_data()
                 widget_state = tk.NORMAL\
@@ -318,7 +313,7 @@ class Views(object):
                 self.citz_by_nm_btn.grid(row=3, column=2,
                                          sticky=tk.W, padx=5)
 
-            def get_ids_by_list():
+            def set_id_by_list_input():
                 """Read in a list of Profile IDs from a file."""
                 self.idf_loc = ttk.Entry(self.collect_frame, width=50)
                 idf_loc_val = tk.StringVar(self.collect_frame)
@@ -338,18 +333,19 @@ class Views(object):
                 self.idf_loc_get_btn.grid(row=4, column=3,
                                           sticky=tk.W, padx=5)
 
-            get_friends()
-            get_citzn_by_id()
-            get_citzn_by_nm()
-            get_ids_by_list()
+            set_friends_list_input()
+            set_ctzn_by_id_input()
+            set_ctzn_by_nm_input()
+            set_id_by_list_input()
 
+        # make_collect_frame() MAIN:
         self.close_frame()
         cfd, _ = CN.get_config_data()
         set_context()
         set_labels()
         set_inputs()
 
-    def make_configs_editor(self):
+    def make_config_frame(self):
         """Construct frame for entering configuration info."""
 
         def prep_data():
@@ -409,9 +405,10 @@ class Views(object):
                 log_path_val.set(cf_dflt["log_loc"])
                 self.log_loc.insert(0, log_path_val.get())
                 self.log_loc.grid(row=1, column=1, sticky=tk.W, padx=5)
-                self.log_loc_btn = ttk.Button(self.cfg_frame,
-                                              text=self.tx.b_set_log_path,
-                                              command=self.select_log_dir)
+                self.log_loc_btn =\
+                    ttk.Button(self.cfg_frame,
+                               text=self.tx.b_set_log_path,
+                               command=self.select_log_dir)
                 self.log_loc_btn.grid(row=1, column=2, sticky=tk.W, padx=5)
 
             def set_log_level_input():
@@ -425,9 +422,10 @@ class Views(object):
                                                self.log_lvl_val,
                                                *self.ST.LogLevel.keys())
                 self.log_level.grid(row=2, column=1, sticky=tk.W, padx=5)
-                self.log_save_btn = ttk.Button(self.cfg_frame,
-                                               text=self.tx.b_save_log_btn,
-                                               command=self.save_log_config)
+                self.log_save_btn =\
+                    ttk.Button(self.cfg_frame,
+                               text=self.tx.b_save_log_btn,
+                               command=self.save_log_config)
                 self.log_save_btn.grid(row=2, column=3, sticky=tk.W, padx=5)
 
             def set_db_bkup_loc_input():
@@ -437,13 +435,15 @@ class Views(object):
                 bkup_path_val.set(cf_dflt["bkup_path"])
                 self.bkup_loc.insert(0, bkup_path_val.get())
                 self.bkup_loc.grid(row=3, column=1, sticky=tk.W, padx=5)
-                self.bkup_loc_btn = ttk.Button(self.cfg_frame,
-                                               text=self.tx.b_set_dbkup_path,
-                                               command=self.select_bkup_dir)
+                self.bkup_loc_btn =\
+                    ttk.Button(self.cfg_frame,
+                               text=self.tx.b_set_dbkup_path,
+                               command=self.select_bkup_dir)
                 self.bkup_loc_btn.grid(row=3, column=2, sticky=tk.W, padx=5)
-                self.bkups_save_btn = ttk.Button(self.cfg_frame,
-                                                 text=self.tx.b_save_bkups_btn,
-                                                 command=self.save_bkup_config)
+                self.bkups_save_btn =\
+                    ttk.Button(self.cfg_frame,
+                               text=self.tx.b_save_bkups_btn,
+                               command=self.save_bkup_config)
                 self.bkups_save_btn.grid(row=3, column=3, sticky=tk.W, padx=5)
 
             def set_erep_email_input():
@@ -461,9 +461,10 @@ class Views(object):
                 passw_val.set(usr_dflt["passw"])
                 self.passw.insert(0, passw_val.get())
                 self.passw.grid(row=5, column=1, sticky=tk.W, padx=5)
-                self.creds_save_btn = ttk.Button(self.cfg_frame,
-                                                 text=self.tx.b_save_creds_btn,
-                                                 command=self.save_user_config)
+                self.creds_save_btn =\
+                    ttk.Button(self.cfg_frame,
+                               text=self.tx.b_save_creds_btn,
+                               command=self.save_user_config)
                 self.creds_save_btn.grid(row=5, column=3, sticky=tk.W, padx=5)
 
             def set_apikey_input():
@@ -473,9 +474,10 @@ class Views(object):
                 apikey_val.set(usr_dflt["apikey"])
                 self.apikey.insert(0, apikey_val.get())
                 self.apikey.grid(row=6, column=1, sticky=tk.W, padx=5)
-                self.apikey_save_btn = ttk.Button(self.cfg_frame,
-                                                  text=self.tx.b_save_apikey_btn,
-                                                  command=self.save_apikey_config)
+                self.apikey_save_btn =\
+                    ttk.Button(self.cfg_frame,
+                               text=self.tx.b_save_apikey_btn,
+                               command=self.save_apikey_config)
                 self.apikey_save_btn.grid(row=6, column=3, sticky=tk.W, padx=5)
 
             set_log_loc_input()
@@ -485,7 +487,7 @@ class Views(object):
             set_erep_password_input()
             set_apikey_input()
 
-        # make_configs_editor() MAIN:
+        # make_config_frame() MAIN:
         self.close_frame()
         cf_dflt = {"log_loc": "", "log_lvl": "", "bkup_path": ""}
         usr_dflt = {"email": "", "passw": "", "apikey": ""}
@@ -501,8 +503,6 @@ class Views(object):
                      p_msg: str,
                      p_detail: str):
         """Construct and display feedback message.
-
-        Handle info, warning and error.
 
         Args:
             p_msg_level (str in ST.MessageLevel.keys())
@@ -544,9 +544,9 @@ class Views(object):
         self.win_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label=self.tx.m_win, menu=self.win_menu)
         self.win_menu.add_command(label=self.tx.m_cfg,
-                                  command=self.make_configs_editor)
+                                  command=self.make_config_frame)
         self.win_menu.add_command(label=self.tx.m_collect,
-                                  command=self.make_lists_collector)
+                                  command=self.make_collect_frame)
 
         self.help_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label=self.tx.m_help,

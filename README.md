@@ -2,20 +2,12 @@
 
 ## Purpose
 
-Home-made tools for interacting with eRepublik friends list
+Home-made app for interacting with eRepublik citizen data.
 
-Work in progress. Nothing is operational at this point, just a collection of notes, snippets.
+Work in progress.
 
-## Desired Features
-
-- Connect and disconnect from eRepublik cleanly
-- Configure runtime environment for the app (config file, database)
-- Store user credentials in encrypted format
-- Gather eRep profile on user, user's friends list, or any valid eRep citizen profile ID
-  - With option to launch a scheduled pull/refresh
-- Store info in a persistent database
-- Update deltas from time to time, save time-series data
-- Perform various types of selects, filters, sorts
-- Do various types of data analysis
-  - Generate interesting graphs and visuals
-- See if in-game messages can be managed a little easier without having to get into auto-defeating captchas
+Unofficial. Not supported by eRepublik Labs.
+eRepublik TOS bans use of transactional user scripts but permits API use
+for read-only analytics.  The official API is not supported.  This application
+uses non-transactional calls to eRepublik and, if the user has a key, to an API
+facade built around eRepublik.

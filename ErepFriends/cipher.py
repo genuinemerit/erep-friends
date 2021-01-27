@@ -14,7 +14,7 @@ from cryptography.fernet import Fernet
 
 
 class Cipher(object):
-    """Generic methods suppoting encryption of a string."""
+    """Generic methods to encrypt/decrypt a string."""
 
     @classmethod
     def set_key(cls) -> bytes:

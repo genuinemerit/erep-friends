@@ -9,9 +9,9 @@ Class:   Logger
 Author:    PQ <pq_rfw @ pm.me>
 """
 import logging
-import traceback
 from copy import copy
 from pprint import pprint as pp  # noqa: F401
+
 from tzlocal import get_localzone
 
 from structs import Structs
@@ -30,11 +30,6 @@ class Logger(object):
         """Initialize the Logger class.
 
         Create a new log file if one does not already exist.
-
-        @DEV - seem to have a problem where the dataclass
-            storage keeps getting re-used even if I copy it.
-            Guess I need to go back to using namedtuple for
-            this use case.
 
         Args:
             p_log_file (path): full path to log file location
@@ -73,22 +68,13 @@ class Logger(object):
 
     def write_log(self,
                   p_msg_level: ST.LogLevel,
-                  p_msg_text: str,
-                  p_traceback: bool = False):
+                  p_msg_text: str):
         """Write message at designated level.
-
-        Messages are written to console and to file.
-        If requested, append a trace to the log message.
 
         Args:
             p_msg_level (ST.LogLevel -> int): Valid log level value
             p_msg_text (string): Content of the message to log
-            p_traceback (bool, optional): Write trace to log if True.
-                                          Defaults to False.
         """
-        if p_traceback:
-            p_msg_text += ST.TextHelp.LF +\
-                          repr(traceback.format_stack()) + ST.TextHelp.LF
         if p_msg_level in (ST.LogLevel.CRITICAL, ST.LogLevel.FATAL):
             logging.fatal(p_msg_text)
         elif p_msg_level == ST.LogLevel.ERROR:

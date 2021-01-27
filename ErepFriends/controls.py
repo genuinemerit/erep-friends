@@ -129,8 +129,8 @@ class Controls(object):
 
     def configure_log(self,
                       p_log_path: str,
-                      p_log_level: str):
-        """Update configs and options with path to log file and log level.
+                      p_log_level: str) -> bool:
+        """Update config data with path to log file and log level.
 
         Args:
             p_log_path (string) path to parent dir of log file
@@ -188,10 +188,7 @@ class Controls(object):
 
     def logout_erep(self,
                     p_cfd: namedtuple):
-        """Logout from eRepublik.
-
-        Kind of guessing here. A 302 (redirect) response seems good.
-        Redirecting to splash page probably.
+        """Logout from eRepublik. Assume 302 (redirect) is a good response.
 
         Args:
             p_cfd (namedtuple): data info from configs table
@@ -280,8 +277,8 @@ class Controls(object):
             p_password (str): User login password
             p_use_response_file (bool): If True, use response text file input
               if it exists.  Write response text if connecting to erep.
-            p_logout (bool): If True, logout at end of method, else do not logout.
-                             Optional. Default is True.
+            p_logout (bool): If True, logout at end of method,
+                             else do not logout. Optional. Default is True.
 
         Returns:
             text: full response.text from eRep login GET  or  None
@@ -655,8 +652,8 @@ class Controls(object):
         response. A regular profile request only returns the
         first 20 friends.
 
-        Always do a real login (not using file) prior to
-        running this method because CSRF token must be accurate.
+        Do interactive login, not using cached response,
+        because CSRF token must be fresh.
 
         Args:
             profile_id (str): citizen ID
@@ -692,15 +689,20 @@ class Controls(object):
         self.logout_erep(cfd)
         return msg_response.text
 
-    def get_friends_data(self, profile_id: str):
-        """Get friends list.
+    def get_friends_data(self,
+                         profile_id: str,):
+        """Get user's friends list. Gather citizen profile data for friends.
 
-        Read local cached copy of previous response if it exists.
+        DO o read-only, non-login GET to pull in citizen profile data.
+        This could be replaced with a call to the erepublik.tools API, but
+        then data might be slightly less fresh than calling eRep directly.
 
-        @DEV -- add option to refresh from erep / don't use file
+        Wait 300 milliseconds between calls. Avoid looking like DDOS attack.
+        This is about 3 citizens per second. Pulling data takes about one
+        minute for every 180 citizens.
 
         Args:
-            profile_id (str): citizen ID, etc.
+            profile_id (str): citizen ID of user
         """
         cfd, _ = self.get_config_data()
         friends_file = path.abspath(path.join(cfd.log_path,
@@ -718,9 +720,10 @@ class Controls(object):
         friends_data = friends_data[1].split(', {prePopulate:')
         friends_data = json.loads(friends_data[0])
         for friend in friends_data:
-            print("Getting profile for {} ... ".format(friend["name"]))
+            print("Getting citizen data for {} ... ".format(friend["name"]))
             citizen_rec = self.get_citizen_profile(friend["id"],
                                                    p_use_file=False)
+            citizen_rec["is_user_friend"] = "True"
             DB.write_db("add", "citizen", citizen_rec, None)
             time.sleep(.300)
         print("*** Done ***")
