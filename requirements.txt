@@ -3,6 +3,7 @@ pathlib
 pillow
 prettyprint
 pytz
+pywebview
 requests
 secrets
 tk

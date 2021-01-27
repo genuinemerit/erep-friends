@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pprint import pprint as pp  # noqa: F401
 from tkinter import messagebox, ttk
 
+import webview
 import requests
 from PIL import Image, ImageTk
 
@@ -127,6 +128,20 @@ class Views(object):
         self.disable_menu_item(self.tx.m_file, self.tx.m_close)
         setattr(self.buffer, 'current_frame', None)
         self.win_root.title(self.tx.app_ttl)
+
+    def show_user_guide(self):
+        """Display User Guide wiki page in browser window."""
+        url =\
+            'https://github.com/genuinemerit/erep-friends/wiki/User-Guide'
+        webview.create_window('Documentation', url)
+        webview.start()
+
+    def show_about(self):
+        """Display About wiki page in browser window."""
+        url =\
+            'https://github.com/genuinemerit/erep-friends/wiki/Caveat-Emptor'
+        webview.create_window('About', url)
+        webview.start()
 
     def save_log_config(self):
         """Handle updates to log info."""
@@ -552,9 +567,9 @@ class Views(object):
         self.menu_bar.add_cascade(label=self.tx.m_help,
                                   menu=self.help_menu)
         self.help_menu.add_command(label=self.tx.m_docs,
-                                   command=self.do_nothing, state="disabled")
+                                   command=self.show_user_guide)
         self.help_menu.add_command(label=self.tx.m_about,
-                                   command=self.do_nothing, state="disabled")
+                                   command=self.show_about)
 
         self.win_root.config(menu=self.menu_bar)
 
