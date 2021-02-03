@@ -11,7 +11,7 @@ Author:    PQ <pq_rfw @ pm.me>
 import tkinter as tk
 from dataclasses import dataclass
 from pprint import pprint as pp  # noqa: F401
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 import webview
 import requests
@@ -120,7 +120,7 @@ class Views(object):
         if self.buffer.current_frame == "config":
             self.cfg_frame.grid_forget()
             self.cfg_frame.destroy()
-        elif self.buffer.current_frame == "connect":
+        elif self.buffer.current_frame == "collect":
             self.collect_frame.grid_forget()
             self.collect_frame.destroy()
         self.enable_menu_item(self.tx.m_win, self.tx.m_cfg)
@@ -170,7 +170,7 @@ class Views(object):
         Returns:
             bool: True if user record exists.
         """
-        usrd, _ = CN.get_database_user_data()
+        usrd, _ = CN.get_user_db_record()
         if usrd is None:
             return False
         else:
@@ -199,7 +199,7 @@ class Views(object):
         """Handle updates to user API Key."""
         erep_apikey = str(self.apikey.get()).strip()
         if erep_apikey:
-            usrd, _ = CN.get_database_user_data()
+            usrd, _ = CN.get_user_db_record()
             if usrd is not None:
                 if CN.verify_api_key(usrd.user_erep_profile_id, erep_apikey):
                     detail = self.tx.m_user_key_ok
@@ -230,29 +230,92 @@ class Views(object):
 
     def collect_friends(self):
         """Login to and logout of erep using user credentials."""
-        usrd, _ = CN.get_database_user_data()
+        usrd, _ = CN.get_user_db_record()
         CN.set_friends_list_input_data(usrd.user_erep_profile_id)
 
     def get_citizen_by_id(self):
-        """Get user profile data from eRepublik."""
-        pass
+        """Get user profile data from eRepublik.
+
+        @DEV - Check option to refresh an individual citizen already
+         on the database. Send as param to get/retrieve methods
+        """
+        msg = None
+        citizen_id = str(self.citz_byid.get()).strip()
+        ctzn_d, _ = CN.get_citizen_db_rec_by_id(citizen_id)
+        if ctzn_d is not None:
+            detail = "Citizen is already in the database"
+            msg, detail = self.update_msg("", "",
+                                          "Citizen found on DB", detail)
+        else:
+            is_friend_val = self.isfriend_id_chk.get()
+            is_friend = True if is_friend_val == 1 else False
+            call_ok = CN.get_erep_citizen_by_id(citizen_id,
+                                                False, is_friend)
+            if call_ok:
+                detail = "New citizen record added to database"
+                msg, detail = self.update_msg("", "", "Citizen added to DB",
+                                              detail)
+        if msg is not None:
+            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def get_citizen_by_name(self):
         """Look up Citizen profile by Name.
 
-        Requires use of erepublik tools API.
+        @DEV - Check option to refresh an individual citizen already
+         on the database. Send as param to get/retrieve methods
+
+        Probably requires use of erepublik tools API.
         """
-        pass
+        msg = None
+        usrd, _ = CN.get_user_db_record()
+        apikey = usrd.user_tools_api_key
+        if apikey in (None, "None", ""):
+            msg, detail = self.update_msg("", "", "No API key.",
+                                          "Lookup by name requires API key.")
+        else:
+            citizen_nm = str(self.citz_bynm.get()).strip()
+            ctzn_d, _ = CN.get_citizen_db_rec_by_nm(citizen_nm)
+            if ctzn_d is not None:
+                detail = "Citizen is already in the database"
+                msg, detail = self.update_msg("", "",
+                                            "Citizen found on DB", detail)
+            else:
+                is_friend_val = self.isfriend_nm_chk.get()
+                is_friend = True if is_friend_val == 1 else False
+                ok, detail =\
+                    CN.get_erep_citizen_by_nm(apikey, citizen_nm,
+                                              False, is_friend)
+                if ok:
+                    msg, detail = self.update_msg("", "", "Citizen added to DB",
+                                                  detail)
+                else:
+                    msg, detail = self.update_msg("", "",
+                                                  "Problem loading data!",
+                                                  detail)
+        if msg is not None:
+            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def select_id_file(self):
-        """Browse for a file containing list of profile IDs."""
-        ftypes = (("Text files", "*.txt*"), ("all files", "*.*"))
-        _ = tk.filedialog.askopenfilename(initialdir=UT.get_home(),
-                                          title=self.tx.b_pick_file,
-                                          filetypes=ftypes)
+        """Select a file containing list of profile IDs."""
+        ftypes = (("All", "*.*"), ("CSV", "*.csv"), ("Text", "*.txt"))
+        idfile = tk.filedialog.askopenfilename(initialdir=UT.get_home(),
+                                               title=self.tx.b_pick_file,
+                                               filetypes=ftypes)
+        self.idf_loc.insert(0, idfile)
 
     def read_id_file(self):
         """Collect citizen data based on a list of profile IDs."""
+        msg = None
+        id_file_path = str(self.idf_loc.get()).strip()
+        if id_file_path not in (None, "None", ""):
+            call_ok, detail = CN.get_erep_citizen_by_id_list(id_file_path)
+            msg, detail = self.update_msg("", "",
+                                          "ID list processed", detail)
+        if msg is not None:
+            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
+
+    def refresh_from_db(self):
+        """Refresh citizen data based on active profile IDs in DB."""
         pass
 
     # Constructors
@@ -286,6 +349,9 @@ class Views(object):
             idf_loc_label = ttk.Label(self.collect_frame,
                                       text=self.tx.m_idf_loc)
             idf_loc_label.grid(row=4, column=0, sticky=tk.E, padx=5)
+            db_refresh_label = ttk.Label(self.collect_frame,
+                                         text=self.tx.m_db_refresh)
+            db_refresh_label.grid(row=5, column=0, sticky=tk.E, padx=5)
 
         def set_inputs():
 
@@ -302,56 +368,85 @@ class Views(object):
                 """Refresh one citizen by ID."""
                 self.citz_byid = ttk.Entry(self.collect_frame, width=25)
                 # citz_byid_val = tk.StringVar(self.collect_frame)
-                self.citz_byid.grid(row=2, column=1, sticky=tk.W)
+                self.citz_byid.grid(row=2, column=1, sticky=tk.W, padx=5)
+                self.isfriend_id_chk = tk.IntVar()
+                isf_id_chk =\
+                    ttk.Checkbutton(self.collect_frame,
+                                    text="Is a friend",
+                                    variable=self.isfriend_id_chk,
+                                    onvalue=1, offvalue=0,
+                                    command=self.do_nothing)
+                isf_id_chk.grid(row=2, column=2, sticky=tk.E, padx=5)
                 self.citz_by_id_btn =\
                     ttk.Button(self.collect_frame,
-                               text=self.tx.m_getcit_byid_btn,
+                               # text=self.tx.m_getcit_byid_btn,
+                               text='Get citizen data',
                                command=self.get_citizen_by_id,
                                state=tk.NORMAL)
-                self.citz_by_id_btn.grid(row=2, column=2, sticky=tk.W, padx=5)
+                self.citz_by_id_btn.grid(row=2, column=3, sticky=tk.W, padx=5)
 
             def set_ctzn_by_nm_input():
                 """Refresh one citizen by Name."""
-                usrd, _ = CN.get_database_user_data()
+                usrd, _ = CN.get_user_db_record()
                 widget_state = tk.NORMAL\
                     if usrd.user_tools_api_key not in (None, "None", "")\
                     else tk.DISABLED
                 self.citz_bynm = ttk.Entry(self.collect_frame, width=25,
                                            state=widget_state)
                 # citz_bynm_val = tk.StringVar(self.collect_frame)
-                self.citz_bynm.grid(row=3, column=1, sticky=tk.W)
+                self.citz_bynm.grid(row=3, column=1, sticky=tk.W, padx=5)
+                self.isfriend_nm_chk = tk.IntVar()
+                isf_nm_chk =\
+                    ttk.Checkbutton(self.collect_frame,
+                                    text="Is a friend",
+                                    variable=self.isfriend_nm_chk,
+                                    onvalue=1, offvalue=0,
+                                    command=self.do_nothing)
+                isf_nm_chk.grid(row=3, column=2, sticky=tk.E, padx=5)
                 self.citz_by_nm_btn =\
                     ttk.Button(self.collect_frame,
-                               text=self.tx.m_getcit_bynm_btn,
+                               # text=self.tx.m_getcit_bynm_btn,
+                               text='Get citizen data',
                                command=self.get_citizen_by_name,
                                state=widget_state)
-                self.citz_by_nm_btn.grid(row=3, column=2,
+                self.citz_by_nm_btn.grid(row=3, column=3,
                                          sticky=tk.W, padx=5)
 
             def set_id_by_list_input():
                 """Read in a list of Profile IDs from a file."""
                 self.idf_loc = ttk.Entry(self.collect_frame, width=50)
                 idf_loc_val = tk.StringVar(self.collect_frame)
-                idf_loc_val.set(cfd.main_db_path)
-                self.idf_loc.insert(0, idf_loc_val.get())
                 self.idf_loc.grid(row=4, column=1, sticky=tk.W, padx=5)
                 self.idf_loc_set_btn =\
                     ttk.Button(self.collect_frame,
-                               text=self.tx.m_idf_loc_set_btn,
+                               # text=self.tx.m_idf_loc_set_btn,
+                               text='Get file',
                                command=self.select_id_file)
                 self.idf_loc_set_btn.grid(row=4, column=2,
                                           sticky=tk.W, padx=5)
                 self.idf_loc_get_btn =\
                     ttk.Button(self.collect_frame,
-                               text=self.tx.m_idf_loc_get_btn,
+                               # text=self.tx.m_idf_loc_get_btn,
+                               text='Get citizen data',
                                command=self.read_id_file)
                 self.idf_loc_get_btn.grid(row=4, column=3,
                                           sticky=tk.W, padx=5)
+
+            def set_db_refresh_input():
+                """Refresh all active citizen profile IDs on the database."""
+                self.db_refresh_btn =\
+                    ttk.Button(self.collect_frame,
+                               # text=self.tx.m_db_refresh_btn,
+                               text='Get citizen data',
+                               command=self.refresh_from_db)
+                self.db_refresh_btn.grid(row=5, column=1,
+                                         sticky=tk.W, padx=5)
 
             set_friends_list_input()
             set_ctzn_by_id_input()
             set_ctzn_by_nm_input()
             set_id_by_list_input()
+            set_db_refresh_input()
 
         # make_collect_frame() MAIN:
         self.close_frame()
@@ -507,7 +602,7 @@ class Views(object):
         cf_dflt = {"log_loc": "", "log_lvl": "", "bkup_path": ""}
         usr_dflt = {"email": "", "passw": "", "apikey": ""}
         cfd, _ = CN.get_config_data()
-        usrd, _ = CN.get_database_user_data()
+        usrd, _ = CN.get_user_db_record()
         prep_data()
         set_context()
         set_labels()
@@ -535,8 +630,8 @@ class Views(object):
 
     def make_user_image(self):
         """Construct the avatar-display."""
-        usrd, _ = CN.get_database_user_data()
-        ctzd, _ = CN.get_citizen_data_by_id(usrd.user_erep_profile_id)
+        usrd, _ = CN.get_user_db_record()
+        ctzd, _ = CN.get_citizen_db_rec_by_id(usrd.user_erep_profile_id)
         user_avatar_file =\
             Image.open(requests.get(ctzd.avatar_link, stream=True).raw)
         tk_img = ImageTk.PhotoImage(user_avatar_file)

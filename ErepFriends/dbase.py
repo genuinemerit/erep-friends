@@ -241,7 +241,8 @@ class Dbase(object):
         Returns:
             str: formatted SQL to execute
         """
-        sql_cols = p_data_rec.keys() + p_audit_rec.keys()
+        sql_cols = list(p_data_rec.keys()) + list(p_audit_rec.keys())
+        sql_cols_txt = ", ".join(sql_cols)
         sql_vals = ""
         for cnm, val in p_data_rec.items():
             if cnm == "encrypt_key":
@@ -256,7 +257,7 @@ class Dbase(object):
             else:
                 sql_vals += "'{}', ".format(val)
         sql = "INSERT INTO {} ({}) VALUES ({});".format(p_tbl_nm,
-                                                        sql_cols,
+                                                        sql_cols_txt,
                                                         sql_vals[:-2])
         return(sql)
 
@@ -324,7 +325,7 @@ class Dbase(object):
         elif p_tbl_nm == "texts":
             db_recs = self.query_texts(p_single)
         elif p_tbl_nm == "citizen":
-            db_recs = self.query_citizen_by_pid(p_pid)
+            db_recs = self.query_citizen_by_pid(p_pid, p_single)
         return db_recs
 
     def set_insert_data(self,
@@ -403,9 +404,19 @@ class Dbase(object):
     def set_logical_delete_sql(self,
                                p_tbl_nm: Types.tblnames,
                                p_pid: str):
-        """Store non-NULL delete_ts on previously-active record."""
+        """Store non-NULL delete_ts on previously-active record.
+
+        @DEV: May want to modify to determine what is the oldest record
+              by examinng update_ts's rather than assume first one in list?
+        """
         recs = self.query_latest(p_tbl_nm, p_pid, False)
-        aud = UT.make_namedtuple("aud", recs[0]["audit"])
+
+        pp(("recs", recs))
+
+        try:
+            aud = UT.make_namedtuple("aud", recs[0]["audit"])
+        except:
+            aud = UT.make_namedtuple("aud", recs["audit"])
         dttm = UT.get_dttm('UTC')
         sql = "UPDATE {}".format(p_tbl_nm)
         sql += " SET delete_ts = '{}'".format(dttm.curr_utc)
@@ -556,6 +567,36 @@ class Dbase(object):
                 self.decrypt_user_data(data_out[0]["data"])
         return data_out
 
+    def format_query_sql(self,
+                         p_tbl_nm: Types.tblnames,
+                         p_single: bool = True):
+        """Format a SELECT query, with option to return only latest row.
+
+        Args:
+            p_tbl_nm (Types.tblnames -> str)
+            p_single (bool): If True, return only the latest row
+
+        Returns:
+            dict: of (dicts keyed by "data", "audit")  or
+            list of dicts liked that ^  or
+            None if no rows found
+        """
+        data_cols = self.ST.TextFields.keys() if p_tbl_nm == "texts"\
+            else self.ST.ConfigFields.keys() if p_tbl_nm == "config"\
+            else self.ST.UserFields.keys() if p_tbl_nm == "user"\
+            else self.ST.CitizenFields.keys()
+        col_nms = data_cols + self.ST.AuditFields.keys()
+        col_nms_txt = ", ".join(col_nms)
+        sql = "SELECT {}, ".format(col_nms_txt)
+        if p_single:
+            sql += "MAX(update_ts)"
+        else:
+            sql = sql[:-2]      # remove trailing comma and space
+        sql += " FROM {} ".format(p_tbl_nm)
+        sql += "WHERE delete_ts IS NULL;"
+        recs = self.execute_query_sql(p_tbl_nm, sql, p_single)
+        return recs
+
     def execute_query_sql(self,
                           p_tbl_nm: Types.tblnames,
                           p_sql: str,
@@ -582,35 +623,6 @@ class Dbase(object):
         elif p_single:
             data_recs = data_recs[0]
         return data_recs
-
-    def format_query_sql(self,
-                         p_tbl_nm: Types.tblnames,
-                         p_single: bool = True):
-        """Format a SELECT query, with option to return only latest row.
-
-        Args:
-            p_tbl_nm (Types.tblnames -> str)
-            p_single (bool): If True, return only the latest row
-
-        Returns:
-            dict: of (dicts keyed by "data", "audit")  or
-            list of dicts liked that ^  or
-            None if no rows found
-        """
-        data_cols = self.ST.TextFields.keys() if p_tbl_nm == "texts"\
-            else self.ST.ConfigFields.keys() if p_tbl_nm == "config"\
-            else self.ST.UserFields.keys() if p_tbl_nm == "user"\
-            else self.ST.CitizenFields.keys()
-        col_nms = data_cols + self.ST.AuditFields.keys()
-        sql = "SELECT {}, ".format(", ".join(col_nms))
-        if p_single:
-            sql += "MAX(update_ts)"
-        else:
-            sql = sql[:-2]      # remove trailing comma and space
-        sql += " FROM {} ".format(p_tbl_nm)
-        sql += "WHERE delete_ts IS NULL;"
-        recs = self.execute_query_sql(p_tbl_nm, sql, p_single)
-        return recs
 
     def query_texts(self, p_single=True) -> dict:
         """Run read-only query against the texts table.
@@ -652,20 +664,25 @@ class Dbase(object):
         return self.format_query_sql("user", p_single)
 
     def query_citizen_by_pid(self,
-                             p_pid: str) -> dict:
+                             p_pid: str,
+                             p_single: bool = True) -> dict:
         """Run read-only query against the citizen table.
 
         Return latest non-deleted record that matches on PID.
 
         Args:
             p_pid (str): ErepFriends DB logical object identifier
+            p_single (bool): If True, return only latest row
 
         Returns:
             dict: of (dicts keyed by "data", "audit")
         """
-        col_nms = self.ST.CitizenFields.keys() + self.ST.AuditFields.keys()
-        sql = "SELECT {}, MAX(update_ts) FROM {} ".format(", ".join(col_nms),
-                                                          "citizen")
+        col_nms = list(self.ST.CitizenFields.keys()) +\
+            list(self.ST.AuditFields.keys())
+        col_nms_txt = ", ".join(col_nms)
+        sql = "SELECT {}, ".format(col_nms_txt)
+        if p_single:
+            sql += " MAX(update_ts) FROM citizen"
         sql += " WHERE pid = '{}'".format(str(p_pid))
         sql += " AND delete_ts is NULL;"
         recs = self.execute_query_sql("citizen", sql, p_single=True)
@@ -683,10 +700,34 @@ class Dbase(object):
         Returns:
             dict: of (dicts keyed by "data", "audit")
         """
-        col_nms = self.ST.CitizenFields.keys() + self.ST.AuditFields.keys()
-        sql = "SELECT {}, MAX(update_ts) FROM {} ".format(", ".join(col_nms),
-                                                          "citizen")
+        col_nms = list(self.ST.CitizenFields.keys()) +\
+            list(self.ST.AuditFields.keys())
+        col_nms_txt = ", ".join(col_nms)
+        sql = "SELECT {}, ".format(col_nms_txt)
+        sql += " MAX(update_ts) FROM citizen"
         sql += " WHERE profile_id = '{}'".format(str(p_profile_id))
+        sql += " AND delete_ts is NULL;"
+        recs = self.execute_query_sql("citizen", sql, p_single=True)
+        return recs
+
+    def query_citizen_by_name(self,
+                              p_citizen_nm: str) -> dict:
+        """Run read-only query against the citizen table.
+
+        Return latest non-deleted record that matches on citizen name.
+
+        Args:
+            p_citizen_nm (str): eRepublik citizen name
+
+        Returns:
+            dict: of (dicts keyed by "data", "audit")
+        """
+        col_nms = list(self.ST.CitizenFields.keys()) +\
+            list(self.ST.AuditFields.keys())
+        col_nms_txt = ", ".join(col_nms)
+        sql = "SELECT {}, ".format(col_nms_txt)
+        sql += " MAX(update_ts) FROM citizen"
+        sql += " WHERE name = '{}'".format(str(p_citizen_nm))
         sql += " AND delete_ts is NULL;"
         recs = self.execute_query_sql("citizen", sql, p_single=True)
         return recs

@@ -2,6 +2,7 @@ cryptography
 pathlib
 pillow
 prettyprint
+pyopenssl
 pytz
 pywebview
 requests

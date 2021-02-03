@@ -54,6 +54,8 @@ class Controls(object):
             'Accept-Language': 'en-US,en;q=0.8',
             'Connection': 'keep-alive',
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/31.0.1650.63 Chrome/31.0.1650.63 Safari/537.36'}  # noqa: E501
+        self.etools_rqst = requests.Session()
+        self.etools_ctzn_bynm_url = "https://api.erepublik.tools/v0/citizen?name=~NAME~&page=1&key=~KEY~"
 
     def configure_database(self):
         """Instantiate Dbase object.
@@ -102,15 +104,20 @@ class Controls(object):
         return self.convert_data_record(
             DB.query_config())
 
-    def get_database_user_data(self):
+    def get_user_db_record(self):
         """Query data base for most current user record, decrypted."""
         return self.convert_data_record(
             DB.query_user())
 
-    def get_citizen_data_by_id(self, p_profile_id: str):
+    def get_citizen_db_rec_by_id(self, p_profile_id: str):
         """Query data base for most current citizen record."""
         return self.convert_data_record(
             DB.query_citizen_by_profile_id(p_profile_id))
+
+    def get_citizen_db_rec_by_nm(self, p_citzn_nm: str):
+        """Query data base for most current citizen record."""
+        return self.convert_data_record(
+            DB.query_citizen_by_name(p_citzn_nm))
 
     def enable_logging(self):
         """Assign log file location. Instantiate Logger object."""
@@ -625,19 +632,19 @@ class Controls(object):
         urec["user_erep_password"] = p_erep_passw
         if p_erep_apikey is not None:
             urec["user_tools_api_key"] = p_erep_apikey
-        _, usra = self.get_database_user_data()
+        _, usra = self.get_user_db_record()
         if usra is None:
             DB.write_db("add", "user", urec, p_pid=None)
         else:
             DB.write_db("upd", "user", urec, p_pid=usra.pid)
 
-    def write_citizen_rec(self, p_citrec: dict):
+    def write_ctzn_rec(self, p_citrec: dict):
         """Add or modify citizen record to database.
 
         Args:
             p_citrec (dict): mirrors ST.CitizenFields
         """
-        _, ctza = self.get_citizen_data_by_id(p_citrec["profile_id"])
+        _, ctza = self.get_citizen_db_rec_by_id(p_citrec["profile_id"])
         if ctza is None:
             DB.write_db("add", "citizen", p_citrec, p_pid=None)
         else:
@@ -661,7 +668,7 @@ class Controls(object):
             response text
         """
         cfd, _ = self.get_config_data()
-        usrd, _ = self.get_database_user_data()
+        usrd, _ = self.get_user_db_record()
         self.verify_citizen_credentials(usrd.user_erep_email,
                                         usrd.user_erep_password,
                                         p_use_response_file=False,
@@ -689,6 +696,109 @@ class Controls(object):
         self.logout_erep(cfd)
         return msg_response.text
 
+    def get_erep_citizen_by_id(self,
+                              p_profile_id: str,
+                              p_use_file: bool = False,
+                              p_is_friend: bool = False) -> bool:
+        """Get citizen data from eRepublik and store in database.
+
+        Args:
+            p_profile_id (string): eRepublik citizen profile ID
+            p_use_file (bool, optional): Defaults to False. If True
+                and a cached file exists, use that instead of
+                calling eRepublik API.
+            p_is_friend (bool, optional): Defaults to False. If True
+                then set "is_user_friend" value to "True" on DB
+
+        Returns:
+            bool: True if citizen data retrieved and stored, else False
+        """
+        ctzn_rec = self.get_citizen_profile(p_profile_id,
+                                            p_use_file=False)
+        if ctzn_rec:
+            if p_is_friend:
+                ctzn_rec["is_user_friend"] = "True"
+            else:
+                ctzn_rec["is_user_friend"] = "False"
+            _, ctza = self.get_citizen_db_rec_by_id(ctzn_rec["profile_id"])
+            if ctza in (None, "None", ""):
+                DB.write_db("add", "citizen", ctzn_rec, None)
+            else:
+                DB.write_db("upd", "citizen", ctzn_rec, p_pid=ctza.pid)
+            time.sleep(.300)
+            return True
+        else:
+            return False
+
+    def get_erep_citizen_by_nm(self,
+                              p_api_key: str,
+                              p_citizen_nm: str,
+                              p_use_file: bool = False,
+                              p_is_friend: bool = False) -> bool:
+        """Get citizen ID by looking up name in erepublik.tools API.
+
+        Then get citizen data from eRepublik and store in database.
+
+        Args:
+            p_api_key (string): user's erepublik.tools API key
+            p_profile_nm (string): eRepublik citizen name
+            p_use_file (bool, optional): Defaults to False. If True
+                and a cached file exists, use that instead of
+                calling eRepublik API.
+            p_is_friend (bool, optional): Defaults to False. If True
+                then set "is_user_friend" value to "True" on DB
+
+        Returns:
+            bool: True if citizen data retrieved and stored, else False
+        """
+        etools_url = self.etools_ctzn_bynm_url.replace("~NAME~", p_citizen_nm)
+        etools_url = etools_url.replace("~KEY~", p_api_key)
+        response = self.etools_rqst.get(etools_url)
+        response_json = json.loads(response.text)
+        profile_id = str(response_json["citizen"][0]["id"]).strip()
+        return self.get_erep_citizen_by_id(profile_id, False, p_is_friend)
+
+    def get_erep_citizen_by_id_list(self,
+                                    p_id_list_path: str) -> bool:
+        """Read list of IDs from file and pull citizen data from eRep.
+
+        Args:
+            p_id_list_path (str): full path to file of profile IDs
+
+        Returns:
+            tuple: (bool: True if file processed OK, else False,
+                    str: detail-level message)
+        """
+        if not Path(p_id_list_path).exists():
+            return (False, "File could not be found")
+        with open(p_id_list_path) as idf:
+            id_list = idf.read()
+            idf.close()
+        id_list = id_list.replace('"', "")
+        id_list = id_list.replace("'", "")
+        id_list = id_list.replace(",", "\n")
+        id_list = id_list.replace(";", "\n")
+        id_list = id_list.replace(":", "\n")
+        id_list = id_list.replace("\t", "\n")
+        id_list = id_list.replace("~", "\n")
+        id_list = id_list.strip()
+        id_list = id_list.split("\n")
+        id_list = [i for i in id_list if i not in (" ", "")]
+        count_hits = 0
+        err = None
+        for profile_id in id_list:
+            ok = self.get_erep_citizen_by_id(profile_id)
+            if ok:
+                count_hits += 1
+            else:
+                err = "Profile ID {} is not valid".format(profile_id)
+        msg = "{} profiles processed successfully".format(count_hits)
+        if err is not None:
+            msg += "\n{}".format(err)
+            return (False, msg)
+        else:
+            return (True, msg)
+
     def get_friends_data(self,
                          profile_id: str,):
         """Get user's friends list. Gather citizen profile data for friends.
@@ -710,6 +820,7 @@ class Controls(object):
         if Path(friends_file).exists():
             with open(friends_file) as ff:
                 friends_data = ff.read()
+                ff.close()
             if self.logme:
                 msg = "Using cached friends_response"
                 self.LOG.write_log(ST.LogLevel.INFO, msg)
@@ -721,9 +832,7 @@ class Controls(object):
         friends_data = json.loads(friends_data[0])
         for friend in friends_data:
             print("Getting citizen data for {} ... ".format(friend["name"]))
-            citizen_rec = self.get_citizen_profile(friend["id"],
-                                                   p_use_file=False)
-            citizen_rec["is_user_friend"] = "True"
-            DB.write_db("add", "citizen", citizen_rec, None)
-            time.sleep(.300)
+            self.get_erep_citizen_by_id(friend["id"],
+                                       p_use_file=False,
+                                       p_is_friend=True)
         print("*** Done ***")
