@@ -9,8 +9,9 @@ Records are modified only when logically deleted.
 Records are removed only when a purge is run.
 
 uid = unique identifier primary key for each row.
-pid = logical identifier for a consistent object.
-create_ts = when the original pid was added to db.
+oid = logical identifier for a consistent object.
+profile_id = eRepublik-provided citizen (player) ID
+create_ts = when the original oid was added to db.
 update_ts = when a given row was created ("updated").
 delete_ts = when a given row was logically deleted.
 hash_id = hash of all non-audit values in a row.
@@ -33,9 +34,11 @@ from pprint import pprint as pp  # noqa: F401
 from typing import Literal
 
 from cipher import Cipher
+from texts import Texts
 from utils import Utils
 
 UT = Utils()
+TX = Texts()
 CI = Cipher()
 
 
@@ -60,15 +63,14 @@ class Dbase(object):
         """Define non-standard data types."""
 
         dbaction = Literal['add', 'upd', 'del']
-        tblnames = Literal['config', 'user', 'citizen', 'texts']
+        tblnames = Literal['config', 'user', 'citizen']
 
     def config_main_db(self):
         """Define main database location."""
         self.ST.ConfigFields.main_db_path =\
             path.abspath(path.realpath(self.ST.ConfigFields.db_dir_path))
         if not Path(self.ST.ConfigFields.main_db_path).exists():
-            msg = self.ST.ConfigFields.main_db_path +\
-                " could not be reached"
+            msg = TX.fuck.f_bad_path + self.ST.ConfigFields.main_db_path
             raise Exception(OSError, msg)
         self.ST.ConfigFields.main_db =\
             path.join(self.ST.ConfigFields.main_db_path,
@@ -85,7 +87,7 @@ class Dbase(object):
         """
         bkup_db_path = path.abspath(path.realpath(p_bkup_db_path))
         if not Path(bkup_db_path).exists():
-            msg = p_bkup_db_path + " could not be reached"
+            msg = TX.fuck.f_bad_path + p_bkup_db_path
             raise Exception(IOError, msg)
         bkup_db = path.join(bkup_db_path, self.ST.ConfigFields.db_name)
         return(bkup_db_path, bkup_db)
@@ -150,14 +152,13 @@ class Dbase(object):
         """Get "data" class column names for selected DB table.
 
         Args:
-            p_tbl_nm (Types.tblnames): config, user or citizen
+            p_tbl_nm (Types.tblnames): config, user, citizen
         Returns:
             list: of "data" dataclass column names
         """
         data_keys =\
             self.ST.ConfigFields.keys() if p_tbl_nm == 'config'\
             else self.ST.UserFields.keys() if p_tbl_nm == 'user'\
-            else self.ST.TextFields.keys() if p_tbl_nm == 'texts'\
             else self.ST.CitizenFields.keys()
         return data_keys
 
@@ -169,7 +170,7 @@ class Dbase(object):
         """
         self.connect_dmain(self.ST.ConfigFields.main_db)
         cur = self.dmain_conn.cursor()
-        for tbl_nm in ['config', 'user', 'citizen', 'texts']:
+        for tbl_nm in ['config', 'user', 'citizen']:
             # Does table already exist?
             sql = "SELECT name FROM sqlite_master " +\
                 "WHERE type='table' AND name='{}';".format(tbl_nm)
@@ -185,7 +186,7 @@ class Dbase(object):
                         col_nms[ix] = col + " BLOB"
                     else:
                         col_nms[ix] = col + " TEXT"
-                    if col in ("pid", "uid", "create_ts", "hash_id"):
+                    if col in ("oid", "uid", "create_ts", "hash_id"):
                         col_nms[ix] += " NOT NULL"
                     if col == "uid":
                         col_nms[ix] += " PRIMARY KEY"
@@ -302,19 +303,19 @@ class Dbase(object):
 
     def query_latest(self,
                      p_tbl_nm: Types.tblnames,
-                     p_pid: str = None,
+                     p_oid: str = None,
                      p_single: bool = True):
         """Get the latest non-deleted record(s) for selected table.
 
         Args:
-            p_tbl_nm (Types.tblnames -> str): user, citizen, config, texts
-            p_pid (str): Ignored except for citizen, when it is required.
+            p_tbl_nm (Types.tblnames -> str): user, citizen, config
+            p_oid (str): Ignored except for citizen, when it is required.
             p_single (bool): If True, return only latest row even if there are
                              multiples with NULL delete_ts. If False, return
                              all latest rows that have a NULL delete_ts.
 
         Returns:
-            dict ("data": ..., "audit", ...) for user, config or texts    or
+            dict ("data": ..., "audit", ...) for user, config or
             list (of dicts like this ^) for citizen
         """
         db_recs = None
@@ -322,10 +323,8 @@ class Dbase(object):
             db_recs = self.query_user(p_single)
         elif p_tbl_nm == "config":
             db_recs = self.query_config(p_single)
-        elif p_tbl_nm == "texts":
-            db_recs = self.query_texts(p_single)
         elif p_tbl_nm == "citizen":
-            db_recs = self.query_citizen_by_pid(p_pid, p_single)
+            db_recs = self.query_citizen_by_oid(p_oid, p_single)
         return db_recs
 
     def set_insert_data(self,
@@ -334,7 +333,7 @@ class Dbase(object):
         """Format one logically new row for main database.
 
         Args:
-            p_tbl_nm (Types.tblnames -> str): user, citizen, config, texts
+            p_tbl_nm (Types.tblnames -> str): user, citizen, config
             p_data (dict): mirrors a "data" dataclass
 
         Returns:
@@ -344,14 +343,14 @@ class Dbase(object):
         for cnm in self.ST.AuditFields.keys():
             audit_rec[cnm] = copy(getattr(self.ST.AuditFields, cnm))
         audit_rec["uid"] = UT.get_uid()
-        audit_rec["pid"] = UT.get_uid()
+        audit_rec["oid"] = UT.get_uid()
         dttm = UT.get_dttm('UTC')
         audit_rec["create_ts"] = dttm.curr_utc
         audit_rec["update_ts"] = dttm.curr_utc
         audit_rec["delete_ts"] = None
         data_rec, audit_rec =\
             self.hash_data_values(p_data, audit_rec)
-        recs = self.query_latest(p_tbl_nm, audit_rec["pid"])
+        recs = self.query_latest(p_tbl_nm, audit_rec["oid"])
         if recs is not None:
             aud = UT.make_namedtuple("aud", recs["audit"])
             if aud.hash_id == audit_rec["hash_id"]:
@@ -364,7 +363,7 @@ class Dbase(object):
     def set_upsert_data(self,
                         p_tbl_nm: Types.tblnames,
                         p_data: dict,
-                        p_pid: str) -> tuple:
+                        p_oid: str) -> tuple:
         """Format one logically updated row to main database.
 
         Do nothing if no value-changes are detected.
@@ -372,22 +371,22 @@ class Dbase(object):
         Args:
             p_tbl_nm (Types.tblnames -> str): user, citizen, config
             p_data (dict): that mirrors a "data" dataclass
-            p_pid (str): Unique Identifier of record to be updated
+            p_oid (str): Unique Identifier of record to be updated
 
         Returns:
             tuple: (dict: "data":.., dict: "audit":..,
                     hash_id of previous version) if prev row exits, else
                     (None, None, None)
         """
-        recs = self.query_latest(p_tbl_nm, p_pid)
+        recs = self.query_latest(p_tbl_nm, p_oid)
         aud = UT.make_namedtuple("aud", recs["audit"])
         dat = UT.make_namedtuple("dat", recs["data"])
-        if not aud or aud.pid != p_pid:
+        if not aud or aud.oid != p_oid:
             msg = "Cannot upsert. Record not found or PID not matched."
             raise Exception(ValueError, msg)
         audit_rec = UT.make_dict(self.ST.AuditFields.keys(), aud)
         audit_rec["uid"] = UT.get_uid()
-        audit_rec['pid'] = copy(aud.pid)
+        audit_rec['oid'] = copy(aud.oid)
         audit_rec['create_ts'] = copy(aud.create_ts)
         dttm = UT.get_dttm('UTC')
         audit_rec['update_ts'] = dttm.curr_utc
@@ -403,9 +402,9 @@ class Dbase(object):
 
     def set_logical_delete_sql(self,
                                p_tbl_nm: Types.tblnames,
-                               p_pid: str):
+                               p_oid: str):
         """Store non-NULL delete_ts on previously-active record."""
-        recs = self.query_latest(p_tbl_nm, p_pid, False)
+        recs = self.query_latest(p_tbl_nm, p_oid, False)
         try:
             aud = UT.make_namedtuple("aud", recs[0]["audit"])
         except:     # noqa: E722
@@ -420,15 +419,15 @@ class Dbase(object):
                         p_db_action: Types.dbaction,
                         p_tbl_nm: Types.tblnames,
                         p_sql: str,
-                        p_pid: str = None,
+                        p_oid: str = None,
                         p_encrypt_key: str = None):
         """Execute SQL to modify the database content.
 
         Args:
             p_db_action (Types.dbaction -> string): add, upd, del
-            p_tbl_nm (Types.tblnames -> str): user, citizen, config, texts
+            p_tbl_nm (Types.tblnames -> str): user, citizen, config
             p_sql (string): the SQL statement to execute
-            p_pid (string): if updating a record, used to delete previous
+            p_oid (string): if updating a record, used to delete previous
             p_encrypt_key (string): if adding or updating a user record
         """
         self.connect_dmain(self.ST.ConfigFields.main_db)
@@ -447,26 +446,26 @@ class Dbase(object):
                 self.dmain_conn.close()
         self.dmain_conn.close()
         if p_db_action == "upd":
-            self.write_db("del", p_tbl_nm, None, p_pid)
+            self.write_db("del", p_tbl_nm, None, p_oid)
 
     def write_db(self,
                  p_db_action: Types.dbaction,
                  p_tbl_nm: Types.tblnames,
                  p_data: dict = None,
-                 p_pid: str = None):
+                 p_oid: str = None):
         """Write a record to the DB.
 
         Args:
             p_db_action (Types.dbaction -> str): add, upd, del
-            p_tbl_nm (Types.tblnames -> str): user, citizen, config, texts
+            p_tbl_nm (Types.tblnames -> str): user, citizen, config
             p_data (dict): mirrors a "data" dataclass. None if "del".
-            p_pid (string): Required for upd, del. Default is None.
+            p_oid (string): Required for upd, del. Default is None.
         """
         if p_db_action == "add":
             data_rec, audit_rec = self.set_insert_data(p_tbl_nm, p_data)
         elif p_db_action == "upd":
             data_rec, audit_rec, prev_hash_id =\
-                self.set_upsert_data(p_tbl_nm, p_data, p_pid)
+                self.set_upsert_data(p_tbl_nm, p_data, p_oid)
         sql = ""
         encrypt_key = ""
         if p_db_action in ("add", "upd"):
@@ -475,10 +474,10 @@ class Dbase(object):
                 encrypt_key = data_rec["encrypt_key"]\
                     if "encrypt_key" in data_rec.keys() else False
         elif p_db_action == "del":
-            sql = self.set_logical_delete_sql(p_tbl_nm, p_pid)
+            sql = self.set_logical_delete_sql(p_tbl_nm, p_oid)
         if sql:
             self.execute_txn_sql(p_db_action, p_tbl_nm, sql,
-                                 p_pid, encrypt_key)
+                                 p_oid, encrypt_key)
 
     def decrypt_user_data(self,
                           p_user_data: dict) -> dict:
@@ -515,7 +514,7 @@ class Dbase(object):
           Ignore the row if it has all None values.
 
         Args:
-            p_tbl_nm (Types.tblnames -> str): config, user, citizen, texts
+            p_tbl_nm (Types.tblnames -> str): config, user, citizen
             p_result (sqlite result set -> list): list of tuples
 
         Returns:
@@ -537,7 +536,6 @@ class Dbase(object):
         col_nms = dat_keys + aud_keys
         dat_dflt = self.ST.ConfigFields if p_tbl_nm == 'config'\
             else self.ST.UserFields if p_tbl_nm == 'user'\
-            else self.ST.TextFields if p_tbl_nm == 'texts'\
             else self.ST.CitizenFields
         max_ix = len(col_nms) - 1
 
@@ -574,8 +572,7 @@ class Dbase(object):
             list of dicts liked that ^  or
             None if no rows found
         """
-        data_cols = self.ST.TextFields.keys() if p_tbl_nm == "texts"\
-            else self.ST.ConfigFields.keys() if p_tbl_nm == "config"\
+        data_cols = self.ST.ConfigFields.keys() if p_tbl_nm == "config"\
             else self.ST.UserFields.keys() if p_tbl_nm == "user"\
             else self.ST.CitizenFields.keys()
         col_nms = data_cols + self.ST.AuditFields.keys()
@@ -617,17 +614,6 @@ class Dbase(object):
             data_recs = data_recs[0]
         return data_recs
 
-    def query_texts(self, p_single=True) -> dict:
-        """Run read-only query against the texts table.
-
-        Args:
-            p_single (bool): If True, return only the latest row
-
-        Returns:
-            dict: of (dicts keyed by "data", "audit")
-        """
-        return self.format_query_sql("texts", p_single)
-
     def query_config(self, p_single=True) -> object:
         """Run read-only query against the user table.
 
@@ -656,15 +642,15 @@ class Dbase(object):
         """
         return self.format_query_sql("user", p_single)
 
-    def query_citizen_by_pid(self,
-                             p_pid: str,
+    def query_citizen_by_oid(self,
+                             p_oid: str,
                              p_single: bool = True) -> dict:
         """Run read-only query against the citizen table.
 
         Return latest non-deleted record that matches on PID.
 
         Args:
-            p_pid (str): ErepFriends DB logical object identifier
+            p_oid (str): ErepFriends DB logical object identifier
             p_single (bool): If True, return only latest row
 
         Returns:
@@ -678,7 +664,7 @@ class Dbase(object):
             sql += " MAX(update_ts)"
         else:
             sql = sql[:-2]
-        sql += " FROM citizen WHERE pid = '{}'".format(str(p_pid))
+        sql += " FROM citizen WHERE oid = '{}'".format(str(p_oid))
         sql += " AND delete_ts is NULL;"
         recs = self.execute_query_sql("citizen", sql, p_single=True)
         return recs
@@ -772,18 +758,18 @@ class Dbase(object):
             raise Exception(IOError, msg)
         return False
 
-    def purge_rows(self, p_pids: list, cur: object):
+    def purge_rows(self, p_oids: list, cur: object):
         """Physically delete a row from citizen table on main db.
 
         Args:
-            p_pids (list): (pids, delete_ts) tuples associated
+            p_oids (list): (oids, delete_ts) tuples associated
                 with rows to physically delete
             cur (object): a cursor on the main database
         """
-        for row in p_pids:
-            d_pid = row[0]
+        for row in p_oids:
+            d_oid = row[0]
             d_delete_ts = row[1]
-            sql = "DELETE citizen WHERE uid = '{}' ".format(d_pid)
+            sql = "DELETE citizen WHERE uid = '{}' ".format(d_oid)
             sql += "AND delete_ts = '{}';".format(d_delete_ts)
             cur.execute(sql)
 
@@ -794,14 +780,14 @@ class Dbase(object):
         # Modify to use an appropriate purge threshold, not just
         # "deleted before today"
         dttm = UT.get_dttm()
-        sql = "SELECT pid, delete_ts FROM citizen "
+        sql = "SELECT oid, delete_ts FROM citizen "
         sql += "WHERE delete_ts < '{}' ".format(dttm.curr_utc)
         sql += "AND delete_ts IS NOT NULL;"
 
         cfd = self.query_config_data()
         self.connect_dmain(cfd.main_db)
         cur = self.dmain_conn.cursor()
-        pid_list = [row for row in cur.execute(sql)]
-        self.purge_rows(cur, pid_list)
+        oid_list = [row for row in cur.execute(sql)]
+        self.purge_rows(cur, oid_list)
         self.dmain_conn.commit()
         self.disconnect_dmain()

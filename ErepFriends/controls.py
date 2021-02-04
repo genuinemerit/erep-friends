@@ -22,9 +22,11 @@ import requests
 from dbase import Dbase
 from logger import Logger
 from structs import Structs
+from texts import Texts
 from utils import Utils
 
 UT = Utils()
+TX = Texts()
 ST = Structs()
 DB = Dbase(ST)
 
@@ -39,8 +41,10 @@ class Controls(object):
     def check_python_version(self):
         """Validate Python version."""
         if sys.version_info[:2] < (3, 6):
-            msg = "Python 3 is required.\n"
-            msg += "Your version is v{}.{}.{}".format(*sys.version_info)
+            msg = TX.fuck.o_py3_req
+            msg += "\n{}".format(TX.fuck.o_user_ver)
+            version = "{}.{}.{}".format(*sys.version_info)
+            msg.replace("~VERSION~", version)
             raise Exception(EnvironmentError, msg)
 
     def set_erep_headers(self):
@@ -71,10 +75,6 @@ class Controls(object):
         DB.config_main_db()
         if not Path(ST.ConfigFields.main_db).exists():
             DB.create_tables()
-            txt_rec = dict()
-            for cnm in ST.TextFields.keys():
-                txt_rec[cnm] = copy(getattr(ST.TextFields, cnm))
-            DB.write_db('add', 'texts', txt_rec)
             cfg_rec = dict()
             for cnm in ST.ConfigFields.keys():
                 cfg_rec[cnm] = copy(getattr(ST.ConfigFields, cnm))
@@ -100,14 +100,6 @@ class Controls(object):
             aud = UT.make_namedtuple("aud", p_data_rows["audit"])
             return (dat, aud)
 
-    def get_text_data(self):
-        """Query data base for most current texts record.
-
-        @DEV - Move texts to a dataclass.
-        """
-        return self.convert_data_record(
-            DB.query_texts())
-
     def get_config_data(self) -> tuple:
         """Query data base for most current config record."""
         return self.convert_data_record(
@@ -118,7 +110,7 @@ class Controls(object):
         return self.convert_data_record(
             DB.query_user())
 
-    def get_citizen_db_rec_by_id(self, p_profile_id: str) -> tuple:
+    def get_ctzn_db_rec_by_id(self, p_profile_id: str) -> tuple:
         """Query data base for most current citizen record.
 
         Args:
@@ -146,9 +138,9 @@ class Controls(object):
             log_file = path.join(cfd.log_path, cfd.log_name)
             self.LOG = Logger(log_file, cfd.log_level)
             self.LOG.set_log()
-            msg = "Log file location: {}".format(log_file)
+            msg = TX.logm.ll_log_loc + log_file
             self.LOG.write_log(ST.LogLevel.INFO, msg)
-            msg = "Log level: {}".format(cfd.log_level)
+            msg = TX.logm.ll_log_lvl + cfd.log_level
             self.LOG.write_log(ST.LogLevel.INFO, msg)
 
     def configure_log(self,
@@ -173,11 +165,10 @@ class Controls(object):
                 else cfd.log_level
         log_path = path.abspath(path.realpath(log_path))
         if not Path(log_path).exists():
-            msg = "Log file path does not exist." +\
-                "\nUser must create directory or pick a valid one."
+            msg = TX.fuck.o_bad_log_path
             raise Exception(IOError, msg)
         if log_level not in ST.LogLevel.keys():
-            msg = "Log level must be one of: " + str(ST.LogLevel.keys)
+            msg = TX.fuck.o_log_lvl_req + str(ST.LogLevel.keys)
             raise Exception(ValueError, msg)
         data_rec = dict()
         for cnm in ST.ConfigFields.keys():
@@ -187,7 +178,7 @@ class Controls(object):
                 data_rec[cnm] = log_level
             else:
                 data_rec[cnm] = copy(getattr(cfd, cnm))
-        DB.write_db('upd', 'config', data_rec, cfa.pid)
+        DB.write_db('upd', 'config', data_rec, cfa.oid)
         self.enable_logging()
         return self.logme
 
@@ -206,7 +197,7 @@ class Controls(object):
         data_rec["bkup_db"] = bkup_db
         data_rec["arcv_db_path"] = bkup_db_path
         data_rec["arcv_db"] = bkup_db
-        DB.write_db('upd', 'config', data_rec, cfa.pid)
+        DB.write_db('upd', 'config', data_rec, cfa.oid)
         DB.backup_db()
         return True
 
@@ -225,13 +216,13 @@ class Controls(object):
                                            data=formdata,
                                            allow_redirects=True)
             if self.logme:
-                msg = "Logout status code: {}".format(response.status_code)
+                msg = TX.logm.ll_logout_cd + str(response.status_code)
                 self.LOG.write_log(ST.LogLevel.INFO, msg)
             if response.status_code == 302:
                 self.erep_csrf_token = None
                 response = self.erep_rqst.get(p_cfd.erep_url)
                 if self.logme:
-                    msg = "Logout response/redirect text saved to log dir"
+                    msg = TX.logm.ll_save_logout_resp
                     self.LOG.write_log(ST.LogLevel.INFO, msg)
 
     def get_token(self, response_text: str):
@@ -266,7 +257,7 @@ class Controls(object):
         parse_text = parse_text[1].split(",")
         id_info.user_name = parse_text[0].replace('"', '')
         if self.logme:
-            msg = "Login response text saved to log dir"
+            msg = TX.logm.ll_save_login_resp
             self.LOG.write_log(ST.LogLevel.INFO, msg)
         return id_info
 
@@ -316,7 +307,7 @@ class Controls(object):
             response_text = self.get_local_login_file(cfd)
             if response_text:
                 if self.logme:
-                    msg = "Using cached login data for credentials"
+                    msg = TX.logm.ll_cached_login
                     self.LOG.write_log(ST.LogLevel.INFO, msg)
         if not response_text:
             formdata = {'citizen_email': p_email,
@@ -327,7 +318,7 @@ class Controls(object):
                                            data=formdata,
                                            allow_redirects=False)
             if self.logme:
-                msg = "Login status code: {}".format(response.status_code)
+                msg = TX.logm.ll_login_cd + str(response.status_code)
                 self.LOG.write_log(ST.LogLevel.INFO, msg)
             if response.status_code == 302:
                 response = self.erep_rqst.get(cfd.erep_url)
@@ -338,8 +329,7 @@ class Controls(object):
                               "login_response")), "w") as f:
                         f.write(response.text)
             else:
-                msg = "Login connection failed. See response text in log." +\
-                    "\n Probably a captcha. May want to wait a few hours."
+                msg = TX.fuck.o_login_failed
                 raise Exception(ConnectionError, msg)
         id_info = self.parse_user_info(response_text, cfd)
         self.logout_erep(cfd)
@@ -365,8 +355,7 @@ class Controls(object):
         response = requests.get(url)
         response_text = json.loads(response.text)
         if response.status_code in (400, 404):
-            msg = "Verification of eRep Tools API key failed. "
-            msg += response_text["message"]
+            msg = TX.fuck.o_apikey_failed + response_text["message"]
             if self.logme:
                 self.LOG.write_log(ST.LogLevel.ERROR, msg)
             else:
@@ -573,9 +562,9 @@ class Controls(object):
                 str(profile_data['newspaper']["id"]) + "/1")
         return citrec
 
-    def get_citizen_profile(self,
-                            p_profile_id: str,
-                            p_use_file: bool) -> dict:
+    def get_ctzn_profile_from_erep(self,
+                                   p_profile_id: str,
+                                   p_use_file: bool) -> dict:
         """Retrieve profile for a citizen from eRepublik.
 
         Save profile data to a file and return selected values as a dict.
@@ -602,22 +591,20 @@ class Controls(object):
             with open(profile_file) as pf:
                 profile_data = json.loads(pf.read())
             if self.logme:
-                msg = "User {} ".format(str(p_profile_id))
-                msg += "profile data read from file"
+                msg = TX.logm.ll_cached_profile + str(p_profile_id)
                 self.LOG.write_log(ST.LogLevel.DEBUG, msg)
         else:
             profile_url = cfd.erep_url +\
                 "/main/citizen-profile-json/" + p_profile_id
             response = requests.get(profile_url)
             if response.status_code == 404:
-                msg = "Invalid eRepublik Profile ID: {}".format(p_profile_id)
+                msg = TX.fuck.o_profile_id_failed + p_profile_id
                 raise Exception(ValueError, msg)
             profile_data = json.loads(response.text)
             with open(profile_file, "w") as f:
                 f.write(str(response.text))
             if self.logme:
-                msg = "User {} ".format(str(p_profile_id))
-                msg += "profile data saved to file"
+                msg = TX.logm.ll_profile_file_cached + p_profile_id
                 self.LOG.write_log(ST.LogLevel.DEBUG, msg)
 
         citrec["profile_id"] = p_profile_id
@@ -651,9 +638,9 @@ class Controls(object):
             urec["user_tools_api_key"] = p_erep_apikey
         _, usra = self.get_user_db_record()
         if usra is None:
-            DB.write_db("add", "user", urec, p_pid=None)
+            DB.write_db("add", "user", urec, p_oid=None)
         else:
-            DB.write_db("upd", "user", urec, p_pid=usra.pid)
+            DB.write_db("upd", "user", urec, p_oid=usra.oid)
 
     def write_ctzn_rec(self, p_citrec: dict):
         """Add or modify citizen record to database.
@@ -661,11 +648,11 @@ class Controls(object):
         Args:
             p_citrec (dict): mirrors ST.CitizenFields
         """
-        _, ctza = self.get_citizen_db_rec_by_id(p_citrec["profile_id"])
+        _, ctza = self.get_ctzn_db_rec_by_id(p_citrec["profile_id"])
         if ctza is None:
-            DB.write_db("add", "citizen", p_citrec, p_pid=None)
+            DB.write_db("add", "citizen", p_citrec, p_oid=None)
         else:
-            DB.write_db("upd", "citizen", p_citrec, p_pid=ctza.pid)
+            DB.write_db("upd", "citizen", p_citrec, p_oid=ctza.oid)
 
     def request_friends_list(self, p_profile_id: str) -> str:
         """Send PM-posting request to eRepublik.
@@ -730,18 +717,16 @@ class Controls(object):
         Returns:
             bool: True if citizen data retrieved and stored, else False
         """
-        ctzn_rec = self.get_citizen_profile(p_profile_id,
-                                            p_use_file=False)
+        ctzn_rec = self.get_ctzn_profile_from_erep(p_profile_id,
+                                                   p_use_file=False)
         if ctzn_rec:
-            if p_is_friend:
-                ctzn_rec["is_user_friend"] = "True"
-            else:
-                ctzn_rec["is_user_friend"] = "False"
-            _, ctza = self.get_citizen_db_rec_by_id(ctzn_rec["profile_id"])
+            ctzn_rec["is_user_friend"] = "True" if p_is_friend else "False"
+            ctzd, ctza = self.get_ctzn_db_rec_by_id(ctzn_rec["profile_id"])
             if ctza in (None, "None", ""):
                 DB.write_db("add", "citizen", ctzn_rec, None)
             else:
-                DB.write_db("upd", "citizen", ctzn_rec, p_pid=ctza.pid)
+                ctzn_rec["is_user_friend"] = ctzd.is_user_friend
+                DB.write_db("upd", "citizen", ctzn_rec, p_oid=ctza.oid)
             time.sleep(.300)
             return True
         else:
@@ -775,8 +760,8 @@ class Controls(object):
         profile_id = str(response_json["citizen"][0]["id"]).strip()
         return self.get_erep_citizen_by_id(profile_id, False, p_is_friend)
 
-    def get_erep_citizen_by_id_list(self,
-                                    p_id_list: list) -> bool:
+    def get_erep_ctzn_by_id_list(self,
+                                 p_id_list: list) -> bool:
         """Pull citizen data from eRep based on list of IDs.
 
         Args:
@@ -789,20 +774,20 @@ class Controls(object):
         count_hits = 0
         err = None
         for profile_id in p_id_list:
-            print("Getting data for id: {}".format(profile_id))
+            print(TX.msg.n_lookup_id + profile_id)
             ok = self.get_erep_citizen_by_id(profile_id)
             if ok:
                 count_hits += 1
             else:
-                err = "Profile ID {} is not valid".format(profile_id)
-        msg = "{} profiles processed successfully".format(count_hits)
+                err = TX.fuck.o_profile_id_failed + profile_id
+        msg = TX.msg.n_profiles_done + str(count_hits)
         if err is not None:
             msg += "\n{}".format(err)
             return (False, msg)
         else:
             return (True, msg)
 
-    def refresh_citizen_data_from_db(self) -> tuple:
+    def refresh_ctzn_data_from_db(self) -> tuple:
         """Query data base for list of all active profile IDs.
 
         Returns:
@@ -810,8 +795,8 @@ class Controls(object):
                     str: detail-level message)
         """
         id_list = DB.query_for_profile_id_list()
-        msg = "{} IDs retrieved from data base.".format(str(len(id_list)))
-        status, msg_2 = self.get_erep_citizen_by_id_list(id_list)
+        msg = TX.msg.n_profiles_pulled + str(len(id_list))
+        status, msg_2 = self.get_erep_ctzn_by_id_list(id_list)
         msg += "\n{}".format(msg_2)
         return(status, msg)
 
@@ -841,7 +826,7 @@ class Controls(object):
         id_list = id_list.strip()
         id_list = id_list.split("\n")
         id_list = [i for i in id_list if i not in (" ", "")]
-        return self.get_erep_citizen_by_id_list(id_list)
+        return self.get_erep_ctzn_by_id_list(id_list)
 
     def get_friends_data(self,
                          p_profile_id: str,
@@ -871,7 +856,7 @@ class Controls(object):
                 friends_data = ff.read()
                 ff.close()
             if self.logme:
-                msg = "Using cached friends_response"
+                msg = TX.logm.ll_cached_friends
                 self.LOG.write_log(ST.LogLevel.INFO, msg)
         else:
             friends_data = self.request_friends_list(p_profile_id)
@@ -882,11 +867,11 @@ class Controls(object):
         count_hits = 0
         msg = None
         for friend in friends_data:
-            print("Getting citizen data for {} ... ".format(friend["name"]))
+            print(TX.msg.n_lookup_nm + friend["name"])
             self.get_erep_citizen_by_id(friend["id"],
                                         p_use_file=False,
                                         p_is_friend=True)
             count_hits += 1
-        print("*** Done ***")
-        msg = "{} citizen profiles were retrieved.".format(str(count_hits))
+        print(TX.msg.n_finito)
+        msg = TX.msg.n_friends_pulled + str(count_hits)
         return msg

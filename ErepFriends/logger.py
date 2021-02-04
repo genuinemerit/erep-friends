@@ -15,9 +15,11 @@ from pprint import pprint as pp  # noqa: F401
 from tzlocal import get_localzone
 
 from structs import Structs
+from texts import Texts
 from utils import Utils
 
 UT = Utils()
+TX = Texts()
 ST = Structs()
 
 
@@ -42,13 +44,19 @@ class Logger(object):
         localhost_tz = get_localzone()
         localhost_dttm = copy(UT.get_dttm(localhost_tz.zone))
         f = open(self.LOGFILE, 'a+')
-        f.write("\n== Log Session started")
-        f.write("\n== Localhost Time: {} ({})".format(
-                localhost_dttm.curr_lcl, localhost_tz))
-        f.write("\n== eRepublik Time: {} ({})".format(
-                erep_dttm.curr_lcl, ST.TimeZone.EREP))
-        f.write("\n== Universal Time: {} ({})\n\n".format(
-                erep_dttm.curr_utc, ST.TimeZone.UTC))
+        f.write(TX.logm.ll_start_sess)
+        local_tm = "{}{} ({})".format(TX.logm.ll_local_tm,
+                                      localhost_dttm.curr_lcl,
+                                      localhost_tz)
+        f.write(local_tm)
+        erep_tm = "{}{} ({})".format(TX.logm.ll_erep_tm,
+                                     erep_dttm.curr_lcl,
+                                     ST.TimeZone.EREP)
+        f.write(erep_tm)
+        univ_tm = "{}{} ({})".format(TX.logm.ll_univ_tm,
+                                     erep_dttm.curr_utc,
+                                     ST.TimeZone.UTC)
+        f.write(univ_tm)
         f.close()
 
     def set_log(self):

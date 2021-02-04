@@ -85,7 +85,7 @@ class Structs(object):
 
         uid: str = None
         hash_id: str = None
-        pid: str = None
+        oid: str = None
         create_ts: str = None
         update_ts: str = None
         delete_ts: str = None
@@ -114,76 +114,6 @@ class Structs(object):
         def keys():
             """Get column names."""
             return list(Structs.ConfigFields.__dataclass_fields__.keys())
-
-    @dataclass
-    class TextFields:
-        """Define static text items."""
-
-        app_ttl: str = 'Analyze eRepublik Citizens Data'
-        cfg_ttl: str = 'Configure ErepFriends'
-        collect_ttl: str = 'Collect Citizen Data'
-        m_file: str = 'File'
-        m_save: str = 'Save'
-        m_close: str = 'Close'
-        m_quit: str = 'Exit'
-        m_win: str = 'Windows'
-        m_cfg: str = 'Configure ErepFriends'
-        m_collect: str = 'Collect Citizen Data'
-        m_help: str = 'Help'
-        m_docs: str = 'User Guide'
-        m_about: str = 'About'
-        m_cfg_lbl: str = 'Enter configuration choices,' +\
-                         'then select File-->Save'
-        m_logs: str = 'Log location'
-        m_log_level: str = 'Log level'
-        m_bkups: str = 'Backup DBs location'
-        m_bkups_btn: str = 'Set backups path'
-        m_email: str = 'eRep Email Login'
-        m_passw: str = 'eRep Password'
-        m_apikey: str = 'eRep Tools API Key'
-        m_getfriends: str = 'Refresh user friends list:'
-        m_getfriends_btn: str = 'Post request to eRepublik'
-        m_getcit_byid: str = 'Get citizen data by ID:'
-        m_getcit_byid_btn: str = 'Get citizen profile'
-        m_getcit_bynm: str = 'Get citizen data by Name:'
-        m_getcit_bynm_btn: str = 'Get citizen profile'
-        m_connect_lbl: str = 'Press button to verify credentials.' +\
-                             ' Then press button to refresh user profile.'
-        m_creds: str = 'Verify eRep credentials: '
-        m_creds_btn: str = 'Post eRep Login'
-        m_profile: str = 'Refresh eRep profile data: '
-        m_profile_btn: str = 'Get Data'
-        m_idf_loc: str = 'Read Profile IDs from file:'
-        m_idf_loc_set_btn: str = 'Set File'
-        m_idf_loc_get_btn: str = 'Refresh citizen profiles'
-        m_db_refresh: str = 'Refresh all on Database'
-        m_db_refresh_btn: str = 'Get profile data'
-        b_pick_file: str = "Select a file"
-        b_set_log_path: str = "Set Log Path"
-        b_set_dbkup_path: str = "Set backups path"
-        b_save_log_btn: str = "Update log config"
-        b_save_bkups_btn: str = "Update backups config"
-        b_save_creds_btn: str = "Verify/Update eRep login"
-        b_save_apikey_btn: str = "Verify/Update API key"
-        m_info_ttl: str = "Information"
-        m_warn_ttl: str = "Warning"
-        m_error_ttl: str = "Error"
-        m_log_data: str = "Log information updated."
-        m_logging_on: str = "Loggging turned on."
-        m_bkup_data: str = "DB backup data updated."
-        m_bkups_on: str = "Backup and Archive databases enabled."
-        m_user: str = "User verified."
-        m_user_key: str = "Tried using the API key."
-        m_user_data: str = "User credentials and profile stored."
-        m_user_key_ok: str = "User eRep Tools API key verified."
-        m_user_key_not_ok: str = "User eRep Tools API key FAILED verification."
-        connected: str = 'Login to eRepublik verified'
-        login_failed: str = 'eRep login failed. Please review credentials'
-        greet: str = 'Greetings, [user]!'
-
-        def keys():
-            """Get column names."""
-            return list(Structs.TextFields.__dataclass_fields__.keys())
 
     @dataclass
     class UserFields:

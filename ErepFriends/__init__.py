@@ -1,4 +1,5 @@
 # Import local classes for ErepFriends
+from ErepFriends.texts import Texts
 from ErepFriends.structs import Structs
 from ErepFriends.utils import Utils
 from ErepFriends.logger import Logger

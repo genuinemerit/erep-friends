@@ -18,8 +18,10 @@ import webview
 from PIL import Image, ImageTk
 
 from controls import Controls
+from texts import Texts
 from utils import Utils
 
+TX = Texts()
 CN = Controls()
 UT = Utils()
 
@@ -35,10 +37,9 @@ class Views(object):
         CN.check_python_version()
         CN.set_erep_headers()
         self.ST = CN.configure_database()
-        self.tx, _ = CN.get_text_data()
         self.set_basic_interface()
         if not self.check_user():
-            self.disable_menu_item(self.tx.m_win, self.tx.m_collect)
+            self.disable_menu_item(TX.menu.m_win, TX.menu.i_coll)
             self.make_config_frame()
 
     @dataclass
@@ -55,13 +56,13 @@ class Views(object):
             p_menu (str): Name of the menu
             p_item (str): Name of the menu item
         """
-        if p_menu == self.tx.m_file:
-            if p_item == self.tx.m_close:
+        if p_menu == TX.menu.m_file:
+            if p_item == TX.menu.i_close:
                 self.file_menu.entryconfig(0, state="normal")
-        elif p_menu == self.tx.m_win:
-            if p_item == self.tx.m_cfg:
+        elif p_menu == TX.menu.m_win:
+            if p_item == TX.menu.i_cfg:
                 self.win_menu.entryconfig(0, state="normal")
-            if p_item == self.tx.m_collect:
+            if p_item == TX.menu.i_coll:
                 self.win_menu.entryconfig(1, state="normal")
 
     def disable_menu_item(self, p_menu: str, p_item: str):
@@ -71,13 +72,13 @@ class Views(object):
             p_menu (str): Name of the menu
             p_item (str): Name of the menu item
         """
-        if p_menu == self.tx.m_file:
-            if p_item == self.tx.m_close:
+        if p_menu == TX.menu.m_file:
+            if p_item == TX.menu.i_close:
                 self.file_menu.entryconfig(0, state="disabled")
-        elif p_menu == self.tx.m_win:
-            if p_item == self.tx.m_cfg:
+        elif p_menu == TX.menu.m_win:
+            if p_item == TX.menu.i_cfg:
                 self.win_menu.entryconfig(0, state="disabled")
-            if p_item == self.tx.m_collect:
+            if p_item == TX.menu.i_coll:
                 self.win_menu.entryconfig(1, state="disabled")
 
     def update_msg(self,
@@ -123,24 +124,22 @@ class Views(object):
         elif self.buffer.current_frame == "collect":
             self.collect_frame.grid_forget()
             self.collect_frame.destroy()
-        self.enable_menu_item(self.tx.m_win, self.tx.m_cfg)
-        self.enable_menu_item(self.tx.m_win, self.tx.m_collect)
-        self.disable_menu_item(self.tx.m_file, self.tx.m_close)
+        self.enable_menu_item(TX.menu.m_win, TX.menu.i_cfg)
+        self.enable_menu_item(TX.menu.m_win, TX.menu.i_coll)
+        self.disable_menu_item(TX.menu.m_file, TX.menu.i_close)
         setattr(self.buffer, 'current_frame', None)
-        self.win_root.title(self.tx.app_ttl)
+        self.win_root.title(TX.title.t_app)
 
     def show_user_guide(self):
         """Display User Guide wiki page in browser window."""
-        url =\
-            'https://github.com/genuinemerit/erep-friends/wiki/User-Guide'
-        webview.create_window('Documentation', url)
+        url = TX.docs.h_user_guide
+        webview.create_window(TX.title.t_guide, url)
         webview.start()
 
     def show_about(self):
         """Display About wiki page in browser window."""
-        url =\
-            'https://github.com/genuinemerit/erep-friends/wiki/Caveat-Emptor'
-        webview.create_window('About', url)
+        url = TX.docs.h_about
+        webview.create_window(TX.title.t_about, url)
         webview.start()
 
     def save_log_config(self):
@@ -150,8 +149,8 @@ class Views(object):
         logging_on = CN.configure_log(log_path, log_level)
         if logging_on:
             msg, detail = self.update_msg("", "",
-                                          self.tx.m_log_data,
-                                          self.tx.m_logging_on)
+                                          TX.msg.n_log_cfg,
+                                          TX.msg.n_logging_on)
             self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def save_bkup_config(self) -> tuple:
@@ -160,8 +159,8 @@ class Views(object):
         backups_configd = CN.configure_backups(bkup_db_path)
         if backups_configd:
             msg, detail = self.update_msg("", "",
-                                          self.tx.m_bkup_data,
-                                          self.tx.m_bkups_on)
+                                          TX.msg.n_bkup_cfg,
+                                          TX.msg.n_bkup_on)
             self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def check_user(self) -> bool:
@@ -175,7 +174,7 @@ class Views(object):
             return False
         else:
             CN.enable_logging()
-            self.enable_menu_item(self.tx.m_win, self.tx.m_collect)
+            self.enable_menu_item(TX.menu.m_win, TX.menu.i_coll)
             self.make_user_image()
             return True
 
@@ -187,11 +186,12 @@ class Views(object):
             id_info = CN.verify_citizen_credentials(erep_email,
                                                     erep_passw, True)
             CN.write_user_rec(id_info.profile_id, erep_email, erep_passw)
-            citzn_rec = CN.get_citizen_profile(id_info.profile_id, True)
-            CN.write_citizen_rec(citzn_rec)
-            detail = self.tx.connected + "\n" + self.tx.m_user_data + "\n"
-            detail += self.tx.greet.replace("[user]", id_info.user_name)
-            msg, detail = self.update_msg("", "", self.tx.m_user, detail)
+            citzn_rec = CN.get_ctzn_profile_from_erep(id_info.profile_id,
+                                                      True)
+            CN.write_ctzn_rec(citzn_rec)
+            detail = TX.msg.n_connected + "\n" + TX.msg.n_user_cfg + "\n"
+            detail += TX.msg.n_greet.replace("[user]", id_info.user_name)
+            msg, detail = self.update_msg("", "", TX.msg.n_user_on, detail)
             self.make_message(self.ST.MsgLevel.INFO, msg, detail)
             self.check_user()
 
@@ -202,30 +202,31 @@ class Views(object):
             usrd, _ = CN.get_user_db_record()
             if usrd is not None:
                 if CN.verify_api_key(usrd.user_erep_profile_id, erep_apikey):
-                    detail = self.tx.m_user_key_ok
+                    detail = TX.msg.n_user_key_on
                     CN.write_user_rec(usrd.user_erep_profile_id,
                                       usrd.user_erep_email,
                                       usrd.user_erep_password,
                                       erep_apikey)
                 else:
-                    detail = self.tx.m_user_key_not_ok
+                    detail = TX.msg.n_user_key_fail
             else:
-                detail = self.tx.m_user_key_not_ok
-            msg, detail = self.update_msg("", "", self.tx.m_user_key, detail)
+                detail = TX.msg.n_user_key_fail
+            msg, detail = self.update_msg("", "",
+                                          TX.msg.n_user_key_test, detail)
             self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def select_log_dir(self):
         """Browse for a log directory."""
         dirname =\
             filedialog.askdirectory(initialdir=UT.get_home(),
-                                    title=self.tx.b_set_log_path)
+                                    title=TX.button.b_pick_log_path)
         self.log_loc.insert(0, dirname)
 
     def select_bkup_dir(self):
         """Browse for a backup directory."""
         dirname =\
             filedialog.askdirectory(initialdir=UT.get_home(),
-                                    title=self.tx.b_set_dbkup_path)
+                                    title=TX.button.b_pick_bkup_path)
         self.bkup_loc.insert(0, dirname)
 
     def collect_friends(self):
@@ -233,77 +234,61 @@ class Views(object):
         usrd, _ = CN.get_user_db_record()
         detail = CN.get_friends_data(usrd.user_erep_profile_id)
         msg, detail = self.update_msg("", "",
-                                      "Friends data collected", detail)
+                                      TX.msg.n_got_friends, detail)
         self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def get_citizen_by_id(self):
-        """Get user profile data from eRepublik.
-
-        @DEV - Check option to refresh an individual citizen already
-         on the database. Send as param to get/retrieve methods
-        """
+        """Get user profile data from eRepublik."""
         msg = None
         citizen_id = str(self.citz_byid.get()).strip()
-        ctzn_d, _ = CN.get_citizen_db_rec_by_id(citizen_id)
+        ctzn_d, _ = CN.get_ctzn_db_rec_by_id(citizen_id)
         if ctzn_d is not None:
-            detail = "Citizen is already in the database"
-            msg, detail = self.update_msg("", "",
-                                          "Citizen found on DB", detail)
+            msg = TX.msg.n_citzn_on_db
+            detail = TX.msg.n_updating_citzn
+            is_friend = True if ctzn_d.is_user_friend == "True" else False
         else:
+            msg = TX.msg.n_new_citizen
+            detail = TX.msg.n_adding_citzn
             is_friend_val = self.isfriend_id_chk.get()
             is_friend = True if is_friend_val == 1 else False
-            call_ok = CN.get_erep_citizen_by_id(citizen_id,
-                                                False, is_friend)
-            if call_ok:
-                detail = "New citizen record added to database"
-                msg, detail = self.update_msg("", "", "Citizen added to DB",
-                                              detail)
-        if msg is not None:
+        call_ok = CN.get_erep_citizen_by_id(citizen_id,
+                                            False, is_friend)
+        if call_ok:
+            msg, detail = self.update_msg("", "", msg, detail)
             self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def get_citizen_by_name(self):
-        """Look up Citizen profile by Name.
-
-        @DEV - Check option to refresh an individual citizen already
-         on the database. Send as param to get/retrieve methods
-
-        Probably requires use of erepublik tools API.
-        """
+        """Look up Citizen profile by Name."""
         msg = None
         usrd, _ = CN.get_user_db_record()
         apikey = usrd.user_tools_api_key
         if apikey in (None, "None", ""):
-            msg, detail = self.update_msg("", "", "No API key.",
-                                          "Lookup by name requires API key.")
+            msg, detail = self.update_msg("", "",
+                                          TX.msg.n_no_user_key,
+                                          TX.msg.n_key_required)
         else:
             citizen_nm = str(self.citz_bynm.get()).strip()
             ctzn_d, _ = CN.get_citizen_db_rec_by_nm(citizen_nm)
             if ctzn_d is not None:
-                detail = "Citizen is already in the database"
-                msg, detail = self.update_msg("", "",
-                                              "Citizen found on DB", detail)
+                msg = TX.msg.n_citzn_on_db
+                detail = TX.msg.n_updating_citzn
+                is_friend = True if ctzn_d.is_user_friend == "True"\
+                    else False
             else:
                 is_friend_val = self.isfriend_nm_chk.get()
                 is_friend = True if is_friend_val == 1 else False
                 ok, detail =\
                     CN.get_erep_citizen_by_nm(apikey, citizen_nm,
                                               False, is_friend)
-                if ok:
-                    msg, detail = self.update_msg("", "",
-                                                  "Citizen added to DB",
-                                                  detail)
-                else:
-                    msg, detail = self.update_msg("", "",
-                                                  "Problem loading data!",
-                                                  detail)
-        if msg is not None:
+                msg = TX.msg.n_new_citizen if ok else TX.msg.n_problem
+            self.update_msg("", "", msg, detail)
             self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def select_id_file(self):
         """Select a file containing list of profile IDs."""
         ftypes = (("All", "*.*"), ("CSV", "*.csv"), ("Text", "*.txt"))
         idfile = filedialog.askopenfilename(initialdir=UT.get_home(),
-                                            title=self.tx.b_pick_file,
+                                            title=TX.button.b_pick_file,
                                             filetypes=ftypes)
         self.idf_loc.insert(0, idfile)
 
@@ -318,22 +303,17 @@ class Views(object):
         if id_file_path not in (None, "None", ""):
             call_ok, detail =\
                 CN.refresh_citizen_data_from_file(id_file_path)
-            msg, detail = self.update_msg("", "",
-                                          "ID list processed", detail)
-        if msg is not None:
+            msg, detail = self.update_msg("", "", TX.msg.n_id_file_on,
+                                          detail)
             self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def refresh_from_db(self):
         """Refresh citizen data based on active profile IDs on DB."""
         msg = None
-        call_ok, detail = CN.refresh_citizen_data_from_db()
-        if call_ok:
-            msg = "DB profiles processed from DB."
-        else:
-            msg = "Process failed."
+        ok, detail = CN.refresh_ctzn_data_from_db()
+        msg = TX.msg.n_id_data_on if ok else TX.msg.n_problem
         msg, detail = self.update_msg("", "", msg, detail)
-        if msg is not None:
-            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
+        self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     # Constructors
 
@@ -341,10 +321,10 @@ class Views(object):
         """Construct frame for collecting profile IDs and citizen data."""
         def set_context():
             setattr(self.buffer, 'current_frame', 'collect')
-            self.win_root.title(self.tx.collect_ttl)
-            self.enable_menu_item(self.tx.m_file, self.tx.m_close)
-            self.disable_menu_item(self.tx.m_win, self.tx.m_collect)
-            self.enable_menu_item(self.tx.m_win, self.tx.m_cfg)
+            self.win_root.title(TX.title.t_coll)
+            self.enable_menu_item(TX.menu.m_file, TX.menu.i_close)
+            self.disable_menu_item(TX.menu.m_win, TX.menu.i_coll)
+            self.enable_menu_item(TX.menu.m_win, TX.menu.i_cfg)
             self.collect_frame = tk.Frame(self.win_root,
                                           width=400, padx=5, pady=5)
             self.collect_frame.grid(sticky=tk.N)
@@ -354,20 +334,24 @@ class Views(object):
         def set_labels():
             set_friends_list_input_label =\
                 ttk.Label(self.collect_frame,
-                          text=self.tx.m_getfriends)
+                          text=TX.label.l_getfriends)
             set_friends_list_input_label.grid(row=1, column=0,
                                               sticky=tk.E, padx=5)
-            get_citz_by_id_label = ttk.Label(self.collect_frame,
-                                             text=self.tx.m_getcit_byid)
+            get_citz_by_id_label =\
+                ttk.Label(self.collect_frame,
+                          text=TX.label.l_getcit_byid)
             get_citz_by_id_label.grid(row=2, column=0, sticky=tk.E, padx=5)
-            get_citz_by_nm_label = ttk.Label(self.collect_frame,
-                                             text=self.tx.m_getcit_bynm)
+            get_citz_by_nm_label =\
+                ttk.Label(self.collect_frame,
+                          text=TX.label.l_getcit_bynm)
             get_citz_by_nm_label.grid(row=3, column=0, sticky=tk.E, padx=5)
-            idf_loc_label = ttk.Label(self.collect_frame,
-                                      text=self.tx.m_idf_loc)
+            idf_loc_label =\
+                ttk.Label(self.collect_frame,
+                          text=TX.label.l_idf_loc)
             idf_loc_label.grid(row=4, column=0, sticky=tk.E, padx=5)
-            db_refresh_label = ttk.Label(self.collect_frame,
-                                         text=self.tx.m_db_refresh)
+            db_refresh_label =\
+                ttk.Label(self.collect_frame,
+                          text=TX.label.l_db_refresh)
             db_refresh_label.grid(row=5, column=0, sticky=tk.E, padx=5)
 
         def set_inputs():
@@ -376,7 +360,7 @@ class Views(object):
                 """Collect / refresh friends data."""
                 self.friends_btn =\
                     ttk.Button(self.collect_frame,
-                               text=self.tx.m_getfriends_btn,
+                               text=TX.button.b_getfriends,
                                command=self.collect_friends,
                                state=tk.NORMAL)
                 self.friends_btn.grid(row=1, column=1, sticky=tk.W, padx=5)
@@ -384,20 +368,18 @@ class Views(object):
             def set_ctzn_by_id_input():
                 """Refresh one citizen by ID."""
                 self.citz_byid = ttk.Entry(self.collect_frame, width=25)
-                # citz_byid_val = tk.StringVar(self.collect_frame)
                 self.citz_byid.grid(row=2, column=1, sticky=tk.W, padx=5)
                 self.isfriend_id_chk = tk.IntVar()
                 isf_id_chk =\
                     ttk.Checkbutton(self.collect_frame,
-                                    text="Is a friend",
+                                    text=TX.button.c_is_friend,
                                     variable=self.isfriend_id_chk,
                                     onvalue=1, offvalue=0,
                                     command=self.do_nothing)
                 isf_id_chk.grid(row=2, column=2, sticky=tk.E, padx=5)
                 self.citz_by_id_btn =\
                     ttk.Button(self.collect_frame,
-                               # text=self.tx.m_getcit_byid_btn,
-                               text='Get citizen data',
+                               text=TX.button.b_get_ctzn_data,
                                command=self.get_citizen_by_id,
                                state=tk.NORMAL)
                 self.citz_by_id_btn.grid(row=2, column=3, sticky=tk.W, padx=5)
@@ -410,20 +392,18 @@ class Views(object):
                     else tk.DISABLED
                 self.citz_bynm = ttk.Entry(self.collect_frame, width=25,
                                            state=widget_state)
-                # citz_bynm_val = tk.StringVar(self.collect_frame)
                 self.citz_bynm.grid(row=3, column=1, sticky=tk.W, padx=5)
                 self.isfriend_nm_chk = tk.IntVar()
                 isf_nm_chk =\
                     ttk.Checkbutton(self.collect_frame,
-                                    text="Is a friend",
+                                    text=TX.button.c_is_friend,
                                     variable=self.isfriend_nm_chk,
                                     onvalue=1, offvalue=0,
                                     command=self.do_nothing)
                 isf_nm_chk.grid(row=3, column=2, sticky=tk.E, padx=5)
                 self.citz_by_nm_btn =\
                     ttk.Button(self.collect_frame,
-                               # text=self.tx.m_getcit_bynm_btn,
-                               text='Get citizen data',
+                               text=TX.button.b_get_ctzn_data,
                                command=self.get_citizen_by_name,
                                state=widget_state)
                 self.citz_by_nm_btn.grid(row=3, column=3,
@@ -435,15 +415,13 @@ class Views(object):
                 self.idf_loc.grid(row=4, column=1, sticky=tk.W, padx=5)
                 self.idf_loc_set_btn =\
                     ttk.Button(self.collect_frame,
-                               # text=self.tx.m_idf_loc_set_btn,
-                               text='Get file',
+                               text=TX.button.b_get_file,
                                command=self.select_id_file)
                 self.idf_loc_set_btn.grid(row=4, column=2,
                                           sticky=tk.W, padx=5)
                 self.idf_loc_get_btn =\
                     ttk.Button(self.collect_frame,
-                               # text=self.tx.m_idf_loc_get_btn,
-                               text='Get citizen data',
+                               text=TX.button.b_get_ctzn_data,
                                command=self.refresh_from_file)
                 self.idf_loc_get_btn.grid(row=4, column=3,
                                           sticky=tk.W, padx=5)
@@ -452,8 +430,7 @@ class Views(object):
                 """Refresh all active citizen profile IDs on the database."""
                 self.db_refresh_btn =\
                     ttk.Button(self.collect_frame,
-                               # text=self.tx.m_db_refresh_btn,
-                               text='Get citizen data',
+                               text=TX.button.b_get_ctzn_data,
                                command=self.refresh_from_db)
                 self.db_refresh_btn.grid(row=5, column=1,
                                          sticky=tk.W, padx=5)
@@ -495,10 +472,10 @@ class Views(object):
         def set_context():
             """Set root and frame. Enable/disable menu items."""
             setattr(self.buffer, 'current_frame', 'config')
-            self.win_root.title(self.tx.cfg_ttl)
-            self.enable_menu_item(self.tx.m_file, self.tx.m_close)
-            self.disable_menu_item(self.tx.m_win, self.tx.m_cfg)
-            self.enable_menu_item(self.tx.m_win, self.tx.m_collect)
+            self.win_root.title(TX.title.t_cfg)
+            self.enable_menu_item(TX.menu.m_file, TX.menu.i_close)
+            self.disable_menu_item(TX.menu.m_win, TX.menu.i_cfg)
+            self.enable_menu_item(TX.menu.m_win, TX.menu.i_coll)
             self.cfg_frame = tk.Frame(self.win_root,
                                       width=400, padx=5, pady=5)
             self.cfg_frame.grid(sticky=tk.N)
@@ -507,25 +484,30 @@ class Views(object):
 
         def set_labels():
             """Define and assign text to data entry labels."""
-            log_label = ttk.Label(self.cfg_frame, text=self.tx.m_logs)
+            log_label = ttk.Label(self.cfg_frame,
+                                  text=TX.label.l_log_loc)
             log_label.grid(row=1, column=0, sticky=tk.E, padx=5)
             loglvl_label = ttk.Label(self.cfg_frame,
-                                     text=self.tx.m_log_level)
+                                     text=TX.label.l_log_lvl)
             loglvl_label.grid(row=2, column=0, sticky=tk.E, padx=5)
-            bkup_label = ttk.Label(self.cfg_frame, text=self.tx.m_bkups)
+            bkup_label = ttk.Label(self.cfg_frame,
+                                   text=TX.label.l_bkup)
             bkup_label.grid(row=3, column=0, sticky=tk.E, padx=5)
-            email_label = ttk.Label(self.cfg_frame, text=self.tx.m_email)
+            email_label = ttk.Label(self.cfg_frame,
+                                    text=TX.label.l_email)
             email_label.grid(row=4, column=0, sticky=tk.E, padx=5)
-            passlabel = ttk.Label(self.cfg_frame, text=self.tx.m_passw)
+            passlabel = ttk.Label(self.cfg_frame,
+                                  text=TX.label.l_passw)
             passlabel.grid(row=5, column=0, sticky=tk.E, padx=5)
-            apikey_label = ttk.Label(self.cfg_frame, text=self.tx.m_apikey)
+            apikey_label = ttk.Label(self.cfg_frame,
+                                     text=TX.label.l_apikey)
             apikey_label.grid(row=6, column=0, sticky=tk.E, padx=5)
 
         def set_inputs():
             """Define and assign defaults to data input widgets."""
 
             def set_log_loc_input():
-                """Set log location."""
+                """Save log location."""
                 self.log_loc = ttk.Entry(self.cfg_frame, width=50)
                 log_path_val = tk.StringVar(self.cfg_frame)
                 log_path_val.set(cf_dflt["log_loc"])
@@ -533,7 +515,7 @@ class Views(object):
                 self.log_loc.grid(row=1, column=1, sticky=tk.W, padx=5)
                 self.log_loc_btn =\
                     ttk.Button(self.cfg_frame,
-                               text=self.tx.b_set_log_path,
+                               text=TX.button.b_pick_log_path,
                                command=self.select_log_dir)
                 self.log_loc_btn.grid(row=1, column=2, sticky=tk.W, padx=5)
 
@@ -550,7 +532,7 @@ class Views(object):
                 self.log_level.grid(row=2, column=1, sticky=tk.W, padx=5)
                 self.log_save_btn =\
                     ttk.Button(self.cfg_frame,
-                               text=self.tx.b_save_log_btn,
+                               text=TX.button.b_save_log_cfg,
                                command=self.save_log_config)
                 self.log_save_btn.grid(row=2, column=3, sticky=tk.W, padx=5)
 
@@ -563,12 +545,12 @@ class Views(object):
                 self.bkup_loc.grid(row=3, column=1, sticky=tk.W, padx=5)
                 self.bkup_loc_btn =\
                     ttk.Button(self.cfg_frame,
-                               text=self.tx.b_set_dbkup_path,
+                               text=TX.button.b_pick_bkup_path,
                                command=self.select_bkup_dir)
                 self.bkup_loc_btn.grid(row=3, column=2, sticky=tk.W, padx=5)
                 self.bkups_save_btn =\
                     ttk.Button(self.cfg_frame,
-                               text=self.tx.b_save_bkups_btn,
+                               text=TX.button.b_save_bkup_cfg,
                                command=self.save_bkup_config)
                 self.bkups_save_btn.grid(row=3, column=3, sticky=tk.W, padx=5)
 
@@ -589,7 +571,7 @@ class Views(object):
                 self.passw.grid(row=5, column=1, sticky=tk.W, padx=5)
                 self.creds_save_btn =\
                     ttk.Button(self.cfg_frame,
-                               text=self.tx.b_save_creds_btn,
+                               text=TX.button.b_save_creds,
                                command=self.save_user_config)
                 self.creds_save_btn.grid(row=5, column=3, sticky=tk.W, padx=5)
 
@@ -602,7 +584,7 @@ class Views(object):
                 self.apikey.grid(row=6, column=1, sticky=tk.W, padx=5)
                 self.apikey_save_btn =\
                     ttk.Button(self.cfg_frame,
-                               text=self.tx.b_save_apikey_btn,
+                               text=TX.button.b_save_apikey,
                                command=self.save_apikey_config)
                 self.apikey_save_btn.grid(row=6, column=3, sticky=tk.W, padx=5)
 
@@ -636,18 +618,18 @@ class Views(object):
             p_detail (str) lengthier message text
         """
         if p_msg_level == "ERROR":
-            m_title = self.tx.m_error_ttl
+            m_title = TX.title.t_error
         elif p_msg_level == "WARN":
-            m_title = self.tx.m_warn_ttl
+            m_title = TX.title.t_warn
         else:
-            m_title = self.tx.m_info_ttl
+            m_title = TX.title.t_info
         messagebox.showwarning(title=m_title, message=p_msg,
                                detail="\n{}".format(p_detail))
 
     def make_user_image(self):
         """Construct the avatar-display."""
         usrd, _ = CN.get_user_db_record()
-        ctzd, _ = CN.get_citizen_db_rec_by_id(usrd.user_erep_profile_id)
+        ctzd, _ = CN.get_ctzn_db_rec_by_id(usrd.user_erep_profile_id)
         user_avatar_file =\
             Image.open(requests.get(ctzd.avatar_link, stream=True).raw)
         tk_img = ImageTk.PhotoImage(user_avatar_file)
@@ -660,26 +642,26 @@ class Views(object):
         self.menu_bar = tk.Menu(self.win_root)
 
         self.file_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.menu_bar.add_cascade(label=self.tx.m_file,
+        self.menu_bar.add_cascade(label=TX.menu.m_file,
                                   menu=self.file_menu)
-        self.file_menu.add_command(label=self.tx.m_close,
+        self.file_menu.add_command(label=TX.menu.i_close,
                                    command=self.close_frame, state="disabled")
-        self.file_menu.add_command(label=self.tx.m_quit,
+        self.file_menu.add_command(label=TX.menu.i_quit,
                                    command=self.exit_appl)
 
         self.win_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.menu_bar.add_cascade(label=self.tx.m_win, menu=self.win_menu)
-        self.win_menu.add_command(label=self.tx.m_cfg,
+        self.menu_bar.add_cascade(label=TX.menu.m_win, menu=self.win_menu)
+        self.win_menu.add_command(label=TX.menu.i_cfg,
                                   command=self.make_config_frame)
-        self.win_menu.add_command(label=self.tx.m_collect,
+        self.win_menu.add_command(label=TX.menu.i_coll,
                                   command=self.make_collect_frame)
 
         self.help_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.menu_bar.add_cascade(label=self.tx.m_help,
+        self.menu_bar.add_cascade(label=TX.menu.m_help,
                                   menu=self.help_menu)
-        self.help_menu.add_command(label=self.tx.m_docs,
+        self.help_menu.add_command(label=TX.menu.i_docs,
                                    command=self.show_user_guide)
-        self.help_menu.add_command(label=self.tx.m_about,
+        self.help_menu.add_command(label=TX.menu.i_about,
                                    command=self.show_about)
 
         self.win_root.config(menu=self.menu_bar)
@@ -691,7 +673,7 @@ class Views(object):
         """
         # Initial set of Window widgets
         self.win_root = tk.Tk()     # root app window
-        self.win_root.title(self.tx.app_ttl)
+        self.win_root.title(TX.title.t_app)
         self.win_root.geometry('900x600+100+100')
         self.win_root.minsize(900, 600)
         self.win_root.eval('tk::PlaceWindow . center')
