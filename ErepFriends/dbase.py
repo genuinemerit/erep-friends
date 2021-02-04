@@ -404,18 +404,11 @@ class Dbase(object):
     def set_logical_delete_sql(self,
                                p_tbl_nm: Types.tblnames,
                                p_pid: str):
-        """Store non-NULL delete_ts on previously-active record.
-
-        @DEV: May want to modify to determine what is the oldest record
-              by examinng update_ts's rather than assume first one in list?
-        """
+        """Store non-NULL delete_ts on previously-active record."""
         recs = self.query_latest(p_tbl_nm, p_pid, False)
-
-        pp(("recs", recs))
-
         try:
             aud = UT.make_namedtuple("aud", recs[0]["audit"])
-        except:
+        except:     # noqa: E722
             aud = UT.make_namedtuple("aud", recs["audit"])
         dttm = UT.get_dttm('UTC')
         sql = "UPDATE {}".format(p_tbl_nm)
@@ -682,8 +675,10 @@ class Dbase(object):
         col_nms_txt = ", ".join(col_nms)
         sql = "SELECT {}, ".format(col_nms_txt)
         if p_single:
-            sql += " MAX(update_ts) FROM citizen"
-        sql += " WHERE pid = '{}'".format(str(p_pid))
+            sql += " MAX(update_ts)"
+        else:
+            sql = sql[:-2]
+        sql += " FROM citizen WHERE pid = '{}'".format(str(p_pid))
         sql += " AND delete_ts is NULL;"
         recs = self.execute_query_sql("citizen", sql, p_single=True)
         return recs
@@ -731,6 +726,20 @@ class Dbase(object):
         sql += " AND delete_ts is NULL;"
         recs = self.execute_query_sql("citizen", sql, p_single=True)
         return recs
+
+    def query_for_profile_id_list(self) -> list:
+        """Return a list of all active citizen profile IDs.
+
+        Returns:
+            list: of eRepublik citizen profile IDs
+        """
+        sql = "SELECT profile_id "
+        sql += "FROM citizen WHERE delete_ts IS NULL;"
+        recs = self.execute_query_sql("citizen", sql, p_single=False)
+        id_list = list()
+        for row in recs:
+            id_list.append(row['data']['profile_id'])
+        return id_list
 
     # ================  untested code =========================
     def destroy_db(self, db_path: str) -> bool:

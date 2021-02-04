@@ -49,13 +49,19 @@ class Controls(object):
         self.erep_rqst = requests.Session()
         self.erep_rqst.headers = None
         self.erep_rqst.headers = {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',   # noqa: E501
+            'Accept': 'text/html,application/xhtml+xml,application/xml;' +
+                      'q=0.9,image/webp,*/*;q=0.8',
             'Accept-Encoding': 'gzip,deflate,sdch',
             'Accept-Language': 'en-US,en;q=0.8',
             'Connection': 'keep-alive',
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/31.0.1650.63 Chrome/31.0.1650.63 Safari/537.36'}  # noqa: E501
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) ' +
+                          'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+                          'Ubuntu Chromium/31.0.1650.63 ' +
+                          'Chrome/31.0.1650.63 Safari/537.36'}
         self.etools_rqst = requests.Session()
-        self.etools_ctzn_bynm_url = "https://api.erepublik.tools/v0/citizen?name=~NAME~&page=1&key=~KEY~"
+        self.etools_ctzn_bynm_url =\
+            "https://api.erepublik.tools/v0/citizen?" +\
+            "name=~NAME~&page=1&key=~KEY~"
 
     def configure_database(self):
         """Instantiate Dbase object.
@@ -95,27 +101,38 @@ class Controls(object):
             return (dat, aud)
 
     def get_text_data(self):
-        """Query data base for most current texts record."""
+        """Query data base for most current texts record.
+
+        @DEV - Move texts to a dataclass.
+        """
         return self.convert_data_record(
             DB.query_texts())
 
-    def get_config_data(self):
+    def get_config_data(self) -> tuple:
         """Query data base for most current config record."""
         return self.convert_data_record(
             DB.query_config())
 
-    def get_user_db_record(self):
+    def get_user_db_record(self) -> tuple:
         """Query data base for most current user record, decrypted."""
         return self.convert_data_record(
             DB.query_user())
 
-    def get_citizen_db_rec_by_id(self, p_profile_id: str):
-        """Query data base for most current citizen record."""
+    def get_citizen_db_rec_by_id(self, p_profile_id: str) -> tuple:
+        """Query data base for most current citizen record.
+
+        Args:
+            p_profile_id (str) a valid citizen ID
+        """
         return self.convert_data_record(
             DB.query_citizen_by_profile_id(p_profile_id))
 
-    def get_citizen_db_rec_by_nm(self, p_citzn_nm: str):
-        """Query data base for most current citizen record."""
+    def get_citizen_db_rec_by_nm(self, p_citzn_nm: str) -> tuple:
+        """Query data base for most current citizen record.
+
+        Args:
+            p_citzn_nm (str) a valid citizen name
+        """
         return self.convert_data_record(
             DB.query_citizen_by_name(p_citzn_nm))
 
@@ -650,7 +667,7 @@ class Controls(object):
         else:
             DB.write_db("upd", "citizen", p_citrec, p_pid=ctza.pid)
 
-    def request_friends_list(self, profile_id: str) -> str:
+    def request_friends_list(self, p_profile_id: str) -> str:
         """Send PM-posting request to eRepublik.
 
         The PM Posting request will fail due to captcha's.
@@ -663,7 +680,7 @@ class Controls(object):
         because CSRF token must be fresh.
 
         Args:
-            profile_id (str): citizen ID
+            p_profile_id (str): citizen ID
         Returns:
             response text
         """
@@ -674,13 +691,13 @@ class Controls(object):
                                         p_use_response_file=False,
                                         p_logout=False)
         msg_url =\
-            "{}/main/messages-compose/{}".format(cfd.erep_url, profile_id)
+            "{}/main/messages-compose/{}".format(cfd.erep_url, p_profile_id)
         msg_headers = {
             "Referer": msg_url,
             "X-Requested-With": "XMLHttpRequest"}
         send_message = {
             "_token": self.erep_csrf_token,
-            "citizen_name": profile_id,
+            "citizen_name": p_profile_id,
             "citizen_subject": "This is a test",
             "citizen_message": "This is a test"}
         msg_response = self.erep_rqst.post(msg_url, data=send_message,
@@ -697,9 +714,9 @@ class Controls(object):
         return msg_response.text
 
     def get_erep_citizen_by_id(self,
-                              p_profile_id: str,
-                              p_use_file: bool = False,
-                              p_is_friend: bool = False) -> bool:
+                               p_profile_id: str,
+                               p_use_file: bool = False,
+                               p_is_friend: bool = False) -> bool:
         """Get citizen data from eRepublik and store in database.
 
         Args:
@@ -731,10 +748,10 @@ class Controls(object):
             return False
 
     def get_erep_citizen_by_nm(self,
-                              p_api_key: str,
-                              p_citizen_nm: str,
-                              p_use_file: bool = False,
-                              p_is_friend: bool = False) -> bool:
+                               p_api_key: str,
+                               p_citizen_nm: str,
+                               p_use_file: bool = False,
+                               p_is_friend: bool = False) -> bool:
         """Get citizen ID by looking up name in erepublik.tools API.
 
         Then get citizen data from eRepublik and store in database.
@@ -759,7 +776,47 @@ class Controls(object):
         return self.get_erep_citizen_by_id(profile_id, False, p_is_friend)
 
     def get_erep_citizen_by_id_list(self,
-                                    p_id_list_path: str) -> bool:
+                                    p_id_list: list) -> bool:
+        """Pull citizen data from eRep based on list of IDs.
+
+        Args:
+            p_id_list (list): list of valid citizen profile IDs
+
+        Returns:
+            tuple: (bool: True if file processed OK, else False,
+                    str: detail-level message)
+        """
+        count_hits = 0
+        err = None
+        for profile_id in p_id_list:
+            print("Getting data for id: {}".format(profile_id))
+            ok = self.get_erep_citizen_by_id(profile_id)
+            if ok:
+                count_hits += 1
+            else:
+                err = "Profile ID {} is not valid".format(profile_id)
+        msg = "{} profiles processed successfully".format(count_hits)
+        if err is not None:
+            msg += "\n{}".format(err)
+            return (False, msg)
+        else:
+            return (True, msg)
+
+    def refresh_citizen_data_from_db(self) -> tuple:
+        """Query data base for list of all active profile IDs.
+
+        Returns:
+            tuple: (bool: True if file processed OK, else False,
+                    str: detail-level message)
+        """
+        id_list = DB.query_for_profile_id_list()
+        msg = "{} IDs retrieved from data base.".format(str(len(id_list)))
+        status, msg_2 = self.get_erep_citizen_by_id_list(id_list)
+        msg += "\n{}".format(msg_2)
+        return(status, msg)
+
+    def refresh_citizen_data_from_file(self,
+                                       p_id_list_path: str) -> tuple:
         """Read list of IDs from file and pull citizen data from eRep.
 
         Args:
@@ -784,26 +841,14 @@ class Controls(object):
         id_list = id_list.strip()
         id_list = id_list.split("\n")
         id_list = [i for i in id_list if i not in (" ", "")]
-        count_hits = 0
-        err = None
-        for profile_id in id_list:
-            ok = self.get_erep_citizen_by_id(profile_id)
-            if ok:
-                count_hits += 1
-            else:
-                err = "Profile ID {} is not valid".format(profile_id)
-        msg = "{} profiles processed successfully".format(count_hits)
-        if err is not None:
-            msg += "\n{}".format(err)
-            return (False, msg)
-        else:
-            return (True, msg)
+        return self.get_erep_citizen_by_id_list(id_list)
 
     def get_friends_data(self,
-                         profile_id: str,):
+                         p_profile_id: str,
+                         p_use_file: bool = False):
         """Get user's friends list. Gather citizen profile data for friends.
 
-        DO o read-only, non-login GET to pull in citizen profile data.
+        DO a read-only, non-login GET to pull in citizen profile data.
         This could be replaced with a call to the erepublik.tools API, but
         then data might be slightly less fresh than calling eRep directly.
 
@@ -812,12 +857,16 @@ class Controls(object):
         minute for every 180 citizens.
 
         Args:
-            profile_id (str): citizen ID of user
+            p_profile_id (str): citizen ID of user
+            p_use_file (bool): If True use cached Friends List if it exists,
+                            else Post to eRep to refresh user's friends list
+        Returns:
+            str: detail-level message about successful calls
         """
         cfd, _ = self.get_config_data()
         friends_file = path.abspath(path.join(cfd.log_path,
                                               "friends_response"))
-        if Path(friends_file).exists():
+        if p_use_file and Path(friends_file).exists():
             with open(friends_file) as ff:
                 friends_data = ff.read()
                 ff.close()
@@ -825,14 +874,19 @@ class Controls(object):
                 msg = "Using cached friends_response"
                 self.LOG.write_log(ST.LogLevel.INFO, msg)
         else:
-            friends_data = self.request_friends_list(profile_id)
+            friends_data = self.request_friends_list(p_profile_id)
         friends_data = friends_data.replace("\t", "").replace("\n", "")
         friends_data = friends_data.split('$j("#citizen_name").tokenInput(')
         friends_data = friends_data[1].split(', {prePopulate:')
         friends_data = json.loads(friends_data[0])
+        count_hits = 0
+        msg = None
         for friend in friends_data:
             print("Getting citizen data for {} ... ".format(friend["name"]))
             self.get_erep_citizen_by_id(friend["id"],
-                                       p_use_file=False,
-                                       p_is_friend=True)
+                                        p_use_file=False,
+                                        p_is_friend=True)
+            count_hits += 1
         print("*** Done ***")
+        msg = "{} citizen profiles were retrieved.".format(str(count_hits))
+        return msg

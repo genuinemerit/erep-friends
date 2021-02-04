@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from pprint import pprint as pp  # noqa: F401
 from tkinter import filedialog, messagebox, ttk
 
-import webview
 import requests
+import webview
 from PIL import Image, ImageTk
 
 from controls import Controls
@@ -217,21 +217,24 @@ class Views(object):
     def select_log_dir(self):
         """Browse for a log directory."""
         dirname =\
-            tk.filedialog.askdirectory(initialdir=UT.get_home(),
-                                       title=self.tx.b_set_log_path)
+            filedialog.askdirectory(initialdir=UT.get_home(),
+                                    title=self.tx.b_set_log_path)
         self.log_loc.insert(0, dirname)
 
     def select_bkup_dir(self):
         """Browse for a backup directory."""
         dirname =\
-            tk.filedialog.askdirectory(initialdir=UT.get_home(),
-                                       title=self.tx.b_set_dbkup_path)
+            filedialog.askdirectory(initialdir=UT.get_home(),
+                                    title=self.tx.b_set_dbkup_path)
         self.bkup_loc.insert(0, dirname)
 
     def collect_friends(self):
         """Login to and logout of erep using user credentials."""
         usrd, _ = CN.get_user_db_record()
-        CN.set_friends_list_input_data(usrd.user_erep_profile_id)
+        detail = CN.get_friends_data(usrd.user_erep_profile_id)
+        msg, detail = self.update_msg("", "",
+                                      "Friends data collected", detail)
+        self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def get_citizen_by_id(self):
         """Get user profile data from eRepublik.
@@ -278,7 +281,7 @@ class Views(object):
             if ctzn_d is not None:
                 detail = "Citizen is already in the database"
                 msg, detail = self.update_msg("", "",
-                                            "Citizen found on DB", detail)
+                                              "Citizen found on DB", detail)
             else:
                 is_friend_val = self.isfriend_nm_chk.get()
                 is_friend = True if is_friend_val == 1 else False
@@ -286,7 +289,8 @@ class Views(object):
                     CN.get_erep_citizen_by_nm(apikey, citizen_nm,
                                               False, is_friend)
                 if ok:
-                    msg, detail = self.update_msg("", "", "Citizen added to DB",
+                    msg, detail = self.update_msg("", "",
+                                                  "Citizen added to DB",
                                                   detail)
                 else:
                     msg, detail = self.update_msg("", "",
@@ -298,25 +302,38 @@ class Views(object):
     def select_id_file(self):
         """Select a file containing list of profile IDs."""
         ftypes = (("All", "*.*"), ("CSV", "*.csv"), ("Text", "*.txt"))
-        idfile = tk.filedialog.askopenfilename(initialdir=UT.get_home(),
-                                               title=self.tx.b_pick_file,
-                                               filetypes=ftypes)
+        idfile = filedialog.askopenfilename(initialdir=UT.get_home(),
+                                            title=self.tx.b_pick_file,
+                                            filetypes=ftypes)
         self.idf_loc.insert(0, idfile)
 
-    def read_id_file(self):
-        """Collect citizen data based on a list of profile IDs."""
+    def refresh_from_file(self):
+        """Collect/refresh citizen data based on a list of profile IDs.
+
+        This will add any new IDs not yet on DB and refresh data for
+        those already on the data base.
+        """
         msg = None
         id_file_path = str(self.idf_loc.get()).strip()
         if id_file_path not in (None, "None", ""):
-            call_ok, detail = CN.get_erep_citizen_by_id_list(id_file_path)
+            call_ok, detail =\
+                CN.refresh_citizen_data_from_file(id_file_path)
             msg, detail = self.update_msg("", "",
                                           "ID list processed", detail)
         if msg is not None:
             self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def refresh_from_db(self):
-        """Refresh citizen data based on active profile IDs in DB."""
-        pass
+        """Refresh citizen data based on active profile IDs on DB."""
+        msg = None
+        call_ok, detail = CN.refresh_citizen_data_from_db()
+        if call_ok:
+            msg = "DB profiles processed from DB."
+        else:
+            msg = "Process failed."
+        msg, detail = self.update_msg("", "", msg, detail)
+        if msg is not None:
+            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     # Constructors
 
@@ -415,7 +432,6 @@ class Views(object):
             def set_id_by_list_input():
                 """Read in a list of Profile IDs from a file."""
                 self.idf_loc = ttk.Entry(self.collect_frame, width=50)
-                idf_loc_val = tk.StringVar(self.collect_frame)
                 self.idf_loc.grid(row=4, column=1, sticky=tk.W, padx=5)
                 self.idf_loc_set_btn =\
                     ttk.Button(self.collect_frame,
@@ -428,7 +444,7 @@ class Views(object):
                     ttk.Button(self.collect_frame,
                                # text=self.tx.m_idf_loc_get_btn,
                                text='Get citizen data',
-                               command=self.read_id_file)
+                               command=self.refresh_from_file)
                 self.idf_loc_get_btn.grid(row=4, column=3,
                                           sticky=tk.W, padx=5)
 
