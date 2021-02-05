@@ -2,18 +2,21 @@
 """
 erepFriends
 
-To install ErepFriends...
+To build an ErepFriends wheel and dist...
 - cd to directory that contains setup.py
 - `python3 ./setup.py sdist bdist_wheel`
 If git submodules are used, then to refresh a
   submodule locally after having refreshed it in GitHub
   then in the same directory...
 - `git submodule update --remote --merge`
+To install this package as if it were being pulled
+ from PyPi:
+`python3 -m pip install -e ../path/to/dir/where/setup.py/resides`
 """
 # IMPORTS
 from setuptools import setup, find_packages
 # CONSTANTS
-NAME = "ErepFriends"
+NAME = "erep-friends"
 VERSION = "0.1.0"
 with open('./requirements.txt', 'r') as f_req:
     REQUIRES = f_req.read()
@@ -29,7 +32,7 @@ setup(
     long_description_content_type="text/markdown",
     long_description=README,
     url="https://github.com/genuinemerit/erep-friends.git",
-    keywords=["eRepublik", "API", "ErepFriends"],
+    keywords=["eRepublik", "API", "erep-friends"],
     install_requires=REQUIRES,
     packages=find_packages(),
     include_package_data=True,

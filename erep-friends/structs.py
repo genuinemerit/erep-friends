@@ -98,12 +98,11 @@ class Structs(object):
     class ConfigFields:
         """Define configuration items."""
 
-        erep_url: str = 'https://www.erepublik.com/en'
+        db_dir_path: str = './ErepFriends/db'
+        db_name: str = 'efriends.db'
         log_name: str = 'efriends.log'
         log_path: str = None
         log_level: str = None
-        db_dir_path: str = './db'
-        db_name: str = 'efriends.db'
         main_db_path: str = None
         main_db: str = None
         bkup_db_path: str = None

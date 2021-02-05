@@ -1,9 +1,11 @@
 cryptography
+flake8
+isort
 pathlib
 pillow
+pip
 prettyprint
 pyopenssl
-pytz
 pywebview
 requests
 secrets

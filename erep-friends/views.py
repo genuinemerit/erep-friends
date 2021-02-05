@@ -2,7 +2,7 @@
 #!/usr/bin/python3  # noqa: E265
 
 """
-Manage eRepublik friends GUI widgets.
+Manage erep-friends front end.
 
 Module:    views.py
 Class:     Views/0  inherits object
@@ -27,7 +27,7 @@ UT = Utils()
 
 
 class Views(object):
-    """GUIs for ErepFriends app."""
+    """Manage Tkinter GUI widgets for erep-friends app."""
 
     def __init__(self):
         """Initialize the Views object.
@@ -39,7 +39,7 @@ class Views(object):
         self.ST = CN.configure_database()
         self.set_basic_interface()
         if not self.check_user():
-            self.disable_menu_item(TX.menu.m_win, TX.menu.i_coll)
+            self.set_menu_item(TX.menu.m_win, TX.menu.i_coll, "disable")
             self.make_config_frame()
 
     @dataclass
@@ -49,41 +49,33 @@ class Views(object):
         current_frame: str = None
 
     # Helpers
-    def enable_menu_item(self, p_menu: str, p_item: str):
-        """Enable a menu item.
+
+    def set_menu_item(self,
+                      p_menu: str, p_item: str,
+                      p_action: str):
+        """Enable or disable a menu item.
 
         Args:
             p_menu (str): Name of the menu
             p_item (str): Name of the menu item
+            p_action (str): "enable" or "disable"
         """
+        w_state = "normal" if p_action == "enable"\
+            else "disabled"
         if p_menu == TX.menu.m_file:
             if p_item == TX.menu.i_close:
-                self.file_menu.entryconfig(0, state="normal")
+                self.file_menu.entryconfig(0, state=w_state)
         elif p_menu == TX.menu.m_win:
             if p_item == TX.menu.i_cfg:
-                self.win_menu.entryconfig(0, state="normal")
+                self.win_menu.entryconfig(0, state=w_state)
             if p_item == TX.menu.i_coll:
-                self.win_menu.entryconfig(1, state="normal")
-
-    def disable_menu_item(self, p_menu: str, p_item: str):
-        """Disable a menu item.
-
-        Args:
-            p_menu (str): Name of the menu
-            p_item (str): Name of the menu item
-        """
-        if p_menu == TX.menu.m_file:
-            if p_item == TX.menu.i_close:
-                self.file_menu.entryconfig(0, state="disabled")
-        elif p_menu == TX.menu.m_win:
-            if p_item == TX.menu.i_cfg:
-                self.win_menu.entryconfig(0, state="disabled")
-            if p_item == TX.menu.i_coll:
-                self.win_menu.entryconfig(1, state="disabled")
+                self.win_menu.entryconfig(1, state=w_state)
 
     def update_msg(self,
-                   msg: str, detail: str,
-                   mm: str, dd: str) -> tuple:
+                   msg: str = "",
+                   detail: str = "",
+                   mm: str = "",
+                   dd: str = "") -> tuple:
         """Format result messages.
 
         Args:
@@ -94,22 +86,11 @@ class Views(object):
         Returns:
             tuple: (str: msg, str: detail)
         """
-        if mm:
-            if msg:
-                msg += "\n" + mm
-            else:
-                msg = mm
-        if dd:
-            if detail:
-                detail += "\n" + dd
-            else:
-                detail = dd
+        msg = msg + "\n" + mm if mm else msg
+        detail = detail + "\n" + dd if dd else detail
         return(msg, detail)
 
     # Event handlers
-    def do_nothing(self):
-        """Separate menu items."""   # noqa: D401
-        return True
 
     def exit_appl(self):
         """Quit the app."""
@@ -124,21 +105,21 @@ class Views(object):
         elif self.buffer.current_frame == "collect":
             self.collect_frame.grid_forget()
             self.collect_frame.destroy()
-        self.enable_menu_item(TX.menu.m_win, TX.menu.i_cfg)
-        self.enable_menu_item(TX.menu.m_win, TX.menu.i_coll)
-        self.disable_menu_item(TX.menu.m_file, TX.menu.i_close)
+        self.set_menu_item(TX.menu.m_win, TX.menu.i_cfg, "enable")
+        self.set_menu_item(TX.menu.m_win, TX.menu.i_coll, "enable")
+        self.set_menu_item(TX.menu.m_file, TX.menu.i_close, "disable")
         setattr(self.buffer, 'current_frame', None)
         self.win_root.title(TX.title.t_app)
 
     def show_user_guide(self):
         """Display User Guide wiki page in browser window."""
-        url = TX.docs.h_user_guide
+        url = TX.urls.h_user_guide
         webview.create_window(TX.title.t_guide, url)
         webview.start()
 
     def show_about(self):
         """Display About wiki page in browser window."""
-        url = TX.docs.h_about
+        url = TX.urls.h_about
         webview.create_window(TX.title.t_about, url)
         webview.start()
 
@@ -172,11 +153,10 @@ class Views(object):
         usrd, _ = CN.get_user_db_record()
         if usrd is None:
             return False
-        else:
-            CN.enable_logging()
-            self.enable_menu_item(TX.menu.m_win, TX.menu.i_coll)
-            self.make_user_image()
-            return True
+        CN.enable_logging()
+        self.set_menu_item(TX.menu.m_win, TX.menu.i_coll, "enable")
+        self.make_user_image()
+        return True
 
     def save_user_config(self) -> tuple:
         """Handle updates to user credentials."""
@@ -232,7 +212,7 @@ class Views(object):
     def collect_friends(self):
         """Login to and logout of erep using user credentials."""
         usrd, _ = CN.get_user_db_record()
-        detail = CN.get_friends_data(usrd.user_erep_profile_id)
+        detail = CN.get_erep_friends_data(usrd.user_erep_profile_id)
         msg, detail = self.update_msg("", "",
                                       TX.msg.n_got_friends, detail)
         self.make_message(self.ST.MsgLevel.INFO, msg, detail)
@@ -241,21 +221,23 @@ class Views(object):
         """Get user profile data from eRepublik."""
         msg = None
         citizen_id = str(self.citz_byid.get()).strip()
-        ctzn_d, _ = CN.get_ctzn_db_rec_by_id(citizen_id)
-        if ctzn_d is not None:
-            msg = TX.msg.n_citzn_on_db
-            detail = TX.msg.n_updating_citzn
-            is_friend = True if ctzn_d.is_user_friend == "True" else False
-        else:
-            msg = TX.msg.n_new_citizen
-            detail = TX.msg.n_adding_citzn
-            is_friend_val = self.isfriend_id_chk.get()
-            is_friend = True if is_friend_val == 1 else False
-        call_ok = CN.get_erep_citizen_by_id(citizen_id,
-                                            False, is_friend)
-        if call_ok:
-            msg, detail = self.update_msg("", "", msg, detail)
-            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
+        if citizen_id:
+            ctzn_d, _ = CN.get_ctzn_db_rec_by_id(citizen_id)
+            if ctzn_d is not None:
+                msg = TX.msg.n_citzn_on_db
+                detail = TX.msg.n_updating_citzn
+                is_friend = True if ctzn_d.is_user_friend == "True"\
+                    else False
+            else:
+                msg = TX.msg.n_new_citzn
+                detail = TX.msg.n_adding_citzn
+                is_friend_val = self.isfriend_id_chk.get()
+                is_friend = True if is_friend_val == 1 else False
+            call_ok = CN.get_erep_citizen_by_id(citizen_id,
+                                                False, is_friend)
+            if call_ok:
+                msg, detail = self.update_msg("", "", msg, detail)
+                self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def get_citizen_by_name(self):
         """Look up Citizen profile by Name."""
@@ -268,21 +250,22 @@ class Views(object):
                                           TX.msg.n_key_required)
         else:
             citizen_nm = str(self.citz_bynm.get()).strip()
-            ctzn_d, _ = CN.get_citizen_db_rec_by_nm(citizen_nm)
-            if ctzn_d is not None:
-                msg = TX.msg.n_citzn_on_db
-                detail = TX.msg.n_updating_citzn
-                is_friend = True if ctzn_d.is_user_friend == "True"\
-                    else False
-            else:
-                is_friend_val = self.isfriend_nm_chk.get()
-                is_friend = True if is_friend_val == 1 else False
-                ok, detail =\
-                    CN.get_erep_citizen_by_nm(apikey, citizen_nm,
-                                              False, is_friend)
-                msg = TX.msg.n_new_citizen if ok else TX.msg.n_problem
-            self.update_msg("", "", msg, detail)
-            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
+            if citizen_nm:
+                ctzn_d, _ = CN.get_citizen_db_rec_by_nm(citizen_nm)
+                if ctzn_d is not None:
+                    msg = TX.msg.n_citzn_on_db
+                    detail = TX.msg.n_updating_citzn
+                    is_friend = True if ctzn_d.is_user_friend == "True"\
+                        else False
+                else:
+                    is_friend_val = self.isfriend_nm_chk.get()
+                    is_friend = True if is_friend_val == 1 else False
+                    ok, detail =\
+                        CN.get_erep_citizen_by_nm(apikey, citizen_nm,
+                                                False, is_friend)
+                    msg = TX.msg.n_new_citzn if ok else TX.msg.n_problem
+                self.update_msg("", "", msg, detail)
+                self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def select_id_file(self):
         """Select a file containing list of profile IDs."""
@@ -320,11 +303,12 @@ class Views(object):
     def make_collect_frame(self):
         """Construct frame for collecting profile IDs and citizen data."""
         def set_context():
+            """Adjust menus, set frame."""
             setattr(self.buffer, 'current_frame', 'collect')
             self.win_root.title(TX.title.t_coll)
-            self.enable_menu_item(TX.menu.m_file, TX.menu.i_close)
-            self.disable_menu_item(TX.menu.m_win, TX.menu.i_coll)
-            self.enable_menu_item(TX.menu.m_win, TX.menu.i_cfg)
+            self.set_menu_item(TX.menu.m_file, TX.menu.i_close, "enable")
+            self.set_menu_item(TX.menu.m_win, TX.menu.i_coll, "disable")
+            self.set_menu_item(TX.menu.m_win, TX.menu.i_cfg, "enable")
             self.collect_frame = tk.Frame(self.win_root,
                                           width=400, padx=5, pady=5)
             self.collect_frame.grid(sticky=tk.N)
@@ -332,6 +316,7 @@ class Views(object):
             self.win_root.grid_columnconfigure(1, weight=1)
 
         def set_labels():
+            """Define widget labels for collect frame."""
             set_friends_list_input_label =\
                 ttk.Label(self.collect_frame,
                           text=TX.label.l_getfriends)
@@ -355,6 +340,7 @@ class Views(object):
             db_refresh_label.grid(row=5, column=0, sticky=tk.E, padx=5)
 
         def set_inputs():
+            """Define input widgets for collect frame."""
 
             def set_friends_list_input():
                 """Collect / refresh friends data."""
@@ -374,8 +360,7 @@ class Views(object):
                     ttk.Checkbutton(self.collect_frame,
                                     text=TX.button.c_is_friend,
                                     variable=self.isfriend_id_chk,
-                                    onvalue=1, offvalue=0,
-                                    command=self.do_nothing)
+                                    onvalue=1, offvalue=0)
                 isf_id_chk.grid(row=2, column=2, sticky=tk.E, padx=5)
                 self.citz_by_id_btn =\
                     ttk.Button(self.collect_frame,
@@ -398,8 +383,7 @@ class Views(object):
                     ttk.Checkbutton(self.collect_frame,
                                     text=TX.button.c_is_friend,
                                     variable=self.isfriend_nm_chk,
-                                    onvalue=1, offvalue=0,
-                                    command=self.do_nothing)
+                                    onvalue=1, offvalue=0)
                 isf_nm_chk.grid(row=3, column=2, sticky=tk.E, padx=5)
                 self.citz_by_nm_btn =\
                     ttk.Button(self.collect_frame,
@@ -473,9 +457,9 @@ class Views(object):
             """Set root and frame. Enable/disable menu items."""
             setattr(self.buffer, 'current_frame', 'config')
             self.win_root.title(TX.title.t_cfg)
-            self.enable_menu_item(TX.menu.m_file, TX.menu.i_close)
-            self.disable_menu_item(TX.menu.m_win, TX.menu.i_cfg)
-            self.enable_menu_item(TX.menu.m_win, TX.menu.i_coll)
+            self.set_menu_item(TX.menu.m_file, TX.menu.i_close, "enable")
+            self.set_menu_item(TX.menu.m_win, TX.menu.i_cfg, "disable")
+            self.set_menu_item(TX.menu.m_win, TX.menu.i_coll, "enable")
             self.cfg_frame = tk.Frame(self.win_root,
                                       width=400, padx=5, pady=5)
             self.cfg_frame.grid(sticky=tk.N)
@@ -638,7 +622,7 @@ class Views(object):
         user_avatar_img.place(x=750, y=450)
 
     def make_menus(self):
-        """Construct the app menus on the root window."""
+        """Construct app menus on the root window."""
         self.menu_bar = tk.Menu(self.win_root)
 
         self.file_menu = tk.Menu(self.menu_bar, tearoff=0)

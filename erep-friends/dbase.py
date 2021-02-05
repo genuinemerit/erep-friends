@@ -70,7 +70,7 @@ class Dbase(object):
         self.ST.ConfigFields.main_db_path =\
             path.abspath(path.realpath(self.ST.ConfigFields.db_dir_path))
         if not Path(self.ST.ConfigFields.main_db_path).exists():
-            msg = TX.fuck.f_bad_path + self.ST.ConfigFields.main_db_path
+            msg = TX.shit.f_bad_path + self.ST.ConfigFields.main_db_path
             raise Exception(OSError, msg)
         self.ST.ConfigFields.main_db =\
             path.join(self.ST.ConfigFields.main_db_path,
@@ -87,7 +87,7 @@ class Dbase(object):
         """
         bkup_db_path = path.abspath(path.realpath(p_bkup_db_path))
         if not Path(bkup_db_path).exists():
-            msg = TX.fuck.f_bad_path + p_bkup_db_path
+            msg = TX.shit.f_bad_path + p_bkup_db_path
             raise Exception(IOError, msg)
         bkup_db = path.join(bkup_db_path, self.ST.ConfigFields.db_name)
         return(bkup_db_path, bkup_db)

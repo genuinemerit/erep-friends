@@ -2,7 +2,7 @@
 #!/usr/bin/python3  # noqa: E265
 
 """
-Manage eRepFriends app data and rules.
+Manage erep-friends app business rules.
 
 Module:    controls.py
 Class:     Controls/0  inherits object
@@ -32,17 +32,17 @@ DB = Dbase(ST)
 
 
 class Controls(object):
-    """Rules engine for eRepublik."""
+    """Rules engine for erep-friends."""
 
     def __init__(self):
-        """Initialize Controls() object."""
+        """Initialize Controls object."""
         self.logme = False
 
     def check_python_version(self):
         """Validate Python version."""
         if sys.version_info[:2] < (3, 6):
-            msg = TX.fuck.o_py3_req
-            msg += "\n{}".format(TX.fuck.o_user_ver)
+            msg = TX.shit.f_py3_req
+            msg += "\n{}".format(TX.shit.f_user_ver)
             version = "{}.{}.{}".format(*sys.version_info)
             msg.replace("~VERSION~", version)
             raise Exception(EnvironmentError, msg)
@@ -71,6 +71,10 @@ class Controls(object):
         """Instantiate Dbase object.
 
         Create main DB file and tables if needed.
+
+        @DEV --Let's assume that the db and logs will go into
+        ~/.erep-friends/db. That might be simpler.
+        Maybe still give an option to move them somewhere else.
         """
         DB.config_main_db()
         if not Path(ST.ConfigFields.main_db).exists():
@@ -165,10 +169,10 @@ class Controls(object):
                 else cfd.log_level
         log_path = path.abspath(path.realpath(log_path))
         if not Path(log_path).exists():
-            msg = TX.fuck.o_bad_log_path
+            msg = TX.shit.f_bad_log_path
             raise Exception(IOError, msg)
         if log_level not in ST.LogLevel.keys():
-            msg = TX.fuck.o_log_lvl_req + str(ST.LogLevel.keys)
+            msg = TX.shit.f_log_lvl_req + str(ST.LogLevel.keys)
             raise Exception(ValueError, msg)
         data_rec = dict()
         for cnm in ST.ConfigFields.keys():
@@ -212,7 +216,7 @@ class Controls(object):
             formdata = {'_token': self.erep_csrf_token,
                         "remember": '1',
                         'commit': 'Logout'}
-            response = self.erep_rqst.post(p_cfd.erep_url + "/logout",
+            response = self.erep_rqst.post(TX.urls.u_erep + "/logout",
                                            data=formdata,
                                            allow_redirects=True)
             if self.logme:
@@ -220,7 +224,7 @@ class Controls(object):
                 self.LOG.write_log(ST.LogLevel.INFO, msg)
             if response.status_code == 302:
                 self.erep_csrf_token = None
-                response = self.erep_rqst.get(p_cfd.erep_url)
+                response = self.erep_rqst.get(TX.urls.u_erep)
                 if self.logme:
                     msg = TX.logm.ll_save_logout_resp
                     self.LOG.write_log(ST.LogLevel.INFO, msg)
@@ -313,7 +317,7 @@ class Controls(object):
             formdata = {'citizen_email': p_email,
                         'citizen_password': p_password,
                         "remember": '1', 'commit': 'Login'}
-            login_url = cfd.erep_url + "/login"
+            login_url = TX.urls.u_erep + "/login"
             response = self.erep_rqst.post(login_url,
                                            data=formdata,
                                            allow_redirects=False)
@@ -321,7 +325,7 @@ class Controls(object):
                 msg = TX.logm.ll_login_cd + str(response.status_code)
                 self.LOG.write_log(ST.LogLevel.INFO, msg)
             if response.status_code == 302:
-                response = self.erep_rqst.get(cfd.erep_url)
+                response = self.erep_rqst.get(TX.urls.u_erep)
                 self.get_token(response.text)
                 response_text = response.text
                 if p_use_response_file:
@@ -329,7 +333,7 @@ class Controls(object):
                               "login_response")), "w") as f:
                         f.write(response.text)
             else:
-                msg = TX.fuck.o_login_failed
+                msg = TX.shit.f_login_failed
                 raise Exception(ConnectionError, msg)
         id_info = self.parse_user_info(response_text, cfd)
         self.logout_erep(cfd)
@@ -355,7 +359,7 @@ class Controls(object):
         response = requests.get(url)
         response_text = json.loads(response.text)
         if response.status_code in (400, 404):
-            msg = TX.fuck.o_apikey_failed + response_text["message"]
+            msg = TX.shit.f_apikey_failed + response_text["message"]
             if self.logme:
                 self.LOG.write_log(ST.LogLevel.ERROR, msg)
             else:
@@ -490,7 +494,7 @@ class Controls(object):
             citrec["party_orientation"] = self.convert_val(
                 profile_data["partyData"]["economical_orientation"])
             citrec["party_url"] = self.convert_val(
-                p_cfd.erep_url + "/party/" +
+                TX.urls.u_erep + "/party/" +
                 str(profile_data["partyData"]["stripped_title"]) + "-" +
                 str(profile_data["partyData"]["id"]) + "/1")
         return citrec
@@ -526,7 +530,7 @@ class Controls(object):
             citrec["military_rank"] = self.convert_val(
                 profile_data['military']['militaryUnit']["militaryRank"])
             citrec["militia_url"] = self.convert_val(
-                p_cfd.erep_url + "/military/military-unit/" +
+                TX.urls.u_erep + "/military/military-unit/" +
                 str(profile_data['military']['militaryUnit']['id']) +
                 "/overview")
             citrec["militia_size"] = self.convert_val(
@@ -557,7 +561,7 @@ class Controls(object):
             citrec["newspaper_avatar_link"] = self.convert_val(
                 "https:" + profile_data['newspaper']["avatar"])
             citrec["newspaper_url"] = self.convert_val(
-                p_cfd.erep_url + "/main/newspaper/" +
+                TX.urls.u_erep + "/main/newspaper/" +
                 str(profile_data['newspaper']["stripped_title"]) + "-" +
                 str(profile_data['newspaper']["id"]) + "/1")
         return citrec
@@ -594,11 +598,11 @@ class Controls(object):
                 msg = TX.logm.ll_cached_profile + str(p_profile_id)
                 self.LOG.write_log(ST.LogLevel.DEBUG, msg)
         else:
-            profile_url = cfd.erep_url +\
+            profile_url = TX.urls.u_erep +\
                 "/main/citizen-profile-json/" + p_profile_id
             response = requests.get(profile_url)
             if response.status_code == 404:
-                msg = TX.fuck.o_profile_id_failed + p_profile_id
+                msg = TX.shit.f_profile_id_failed + p_profile_id
                 raise Exception(ValueError, msg)
             profile_data = json.loads(response.text)
             with open(profile_file, "w") as f:
@@ -678,7 +682,7 @@ class Controls(object):
                                         p_use_response_file=False,
                                         p_logout=False)
         msg_url =\
-            "{}/main/messages-compose/{}".format(cfd.erep_url, p_profile_id)
+            "{}/main/messages-compose/{}".format(TX.urls.u_erep, p_profile_id)
         msg_headers = {
             "Referer": msg_url,
             "X-Requested-With": "XMLHttpRequest"}
@@ -779,7 +783,7 @@ class Controls(object):
             if ok:
                 count_hits += 1
             else:
-                err = TX.fuck.o_profile_id_failed + profile_id
+                err = TX.shit.f_profile_id_failed + profile_id
         msg = TX.msg.n_profiles_done + str(count_hits)
         if err is not None:
             msg += "\n{}".format(err)
@@ -828,9 +832,9 @@ class Controls(object):
         id_list = [i for i in id_list if i not in (" ", "")]
         return self.get_erep_ctzn_by_id_list(id_list)
 
-    def get_friends_data(self,
-                         p_profile_id: str,
-                         p_use_file: bool = False):
+    def get_erep_friends_data(self,
+                              p_profile_id: str,
+                              p_use_file: bool = False):
         """Get user's friends list. Gather citizen profile data for friends.
 
         DO a read-only, non-login GET to pull in citizen profile data.

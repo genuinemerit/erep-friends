@@ -118,16 +118,18 @@ class Texts(object):
         n_finito: str = "*** Done ***"
 
     @dataclass
-    class docs:
-        """Help page URLs."""
-
+    class urls:
+        """Static URLs."""
+        # eRepublik and erepublik.tools
+        u_erep: str = "https://www.erepublik.com/en"
+        # Help pages / GitHub wiki
         h_user_guide: str =\
             "https://github.com/genuinemerit/erep-friends/wiki/User-Guide"
         h_about: str =\
             "https://github.com/genuinemerit/erep-friends/wiki/Caveat-Emptor"
 
     @dataclass
-    class fuck:
+    class shit:
         """Error and warning messages."""
 
         f_py3_req: str = "Python 3 is required."
