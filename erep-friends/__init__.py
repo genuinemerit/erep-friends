@@ -1,9 +1,9 @@
-# Import local classes for ErepFriends
-from ErepFriends.texts import Texts
-from ErepFriends.structs import Structs
-from ErepFriends.utils import Utils
-from ErepFriends.logger import Logger
-from ErepFriends.cipher import Cipher
-from ErepFriends.dbase import Dbase
-from ErepFriends.controls import Controls
-from ErepFriends.views import Views
+# Import local classes for erep-friends
+from erep-friends.texts import Texts
+from erep-friends.structs import Structs
+from erep-friends.utils import Utils
+from erep-friends.logger import Logger
+from erep-friends.cipher import Cipher
+from erep-friends.dbase import Dbase
+from erep-friends.controls import Controls
+from erep-friends.views import Views

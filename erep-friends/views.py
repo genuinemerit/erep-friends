@@ -663,12 +663,3 @@ class Views(object):
         self.win_root.eval('tk::PlaceWindow . center')
         # Initial set of menus
         self.make_menus()
-
-# ======================
-# Main
-# ======================
-
-
-if __name__ == "__main__":
-    EF = Views()
-    EF.win_root.mainloop()
