@@ -23,13 +23,13 @@ class Texts(object):
         """Window, frame, messagebox titles."""
 
         t_app: str = 'Analyze eRepublik Citizens Data'
-        t_cfg: str = 'Configure ErepFriends'
+        t_cfg: str = 'Configure erep-friends'
         t_coll: str = 'Collect Citizen Data'
         t_info: str = "Information"
         t_warn: str = "Warning"
         t_error: str = "Error"
         t_guide: str = "User Guide"
-        t_about: str = "About ErepFriends"
+        t_about: str = "About erep-friends"
 
     @dataclass
     class menu:
@@ -43,7 +43,7 @@ class Texts(object):
         i_save: str = 'Save'
         i_close: str = 'Close'
         i_quit: str = 'Exit'
-        i_cfg: str = 'Configure ErepFriends'
+        i_cfg: str = 'Configure erep-friends'
         i_coll: str = 'Collect Citizen Data'
         i_docs: str = 'User Guide'
         i_about: str = 'About'

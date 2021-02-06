@@ -2,9 +2,9 @@
 #!/usr/bin/python3  # noqa: E265
 
 """
-Launch erep-friends application.
+Launch efriends application.
 
-Module:    erep-friends.py
+Module:    efriends.py
 Author:    PQ <pq_rfw @ pm.me>
 """
 

@@ -1,22 +1,17 @@
 # coding: utf-8
 """
-erepFriends
+erep-friends
 
-To build an ErepFriends wheel and dist...
-- cd to directory that contains setup.py
+To build an efriends distribution package:
+- `cd` to /dir/where/setup.py/resides
 - `python3 ./setup.py sdist bdist_wheel`
-If git submodules are used, then to refresh a
-  submodule locally after having refreshed it in GitHub
-  then in the same directory...
-- `git submodule update --remote --merge`
-To install this package as if it were being pulled
- from PyPi:
-`python3 -m pip install -e ../path/to/dir/where/setup.py/resides`
+To install this package:
+`python3 -m pip install -e /dir/where/setup.py/resides`
 """
 # IMPORTS
 from setuptools import setup, find_packages
 # CONSTANTS
-NAME = "erep-friends"
+NAME = "efriends"
 VERSION = "0.1.0"
 with open('./requirements.txt', 'r') as f_req:
     REQUIRES = f_req.read()

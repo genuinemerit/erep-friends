@@ -585,7 +585,7 @@ class Views(object):
         self.win_root.config(menu=self.menu_bar)
 
     def set_basic_interface(self):
-        """Construct GUI widgets for ErepFriends app.
+        """Construct GUI widgets for erep-friends app.
 
         Add more options later. This is enough to get through configuration.
         """
