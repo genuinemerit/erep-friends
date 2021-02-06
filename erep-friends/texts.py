@@ -118,6 +118,18 @@ class Texts(object):
         n_finito: str = "*** Done ***"
 
     @dataclass
+    class dbs:
+        """File and Database names."""
+        lcl_path: str = '.erep-friends'
+        db_path: str = '.erep-friends/db'
+        cache_path: str = '.erep-friends/cache'
+        log_path: str = '.erep-friends/log'
+        bkup_path: str = '.erep-friends/bkup'
+        arcv_path: str = '.erep-friends/arcv'
+        db_name: str = 'efriends.db'
+        log_name: str = 'efriends.log'
+
+    @dataclass
     class urls:
         """Static URLs."""
         # eRepublik and erepublik.tools
@@ -127,22 +139,6 @@ class Texts(object):
             "https://github.com/genuinemerit/erep-friends/wiki/User-Guide"
         h_about: str =\
             "https://github.com/genuinemerit/erep-friends/wiki/Caveat-Emptor"
-
-    @dataclass
-    class shit:
-        """Error and warning messages."""
-
-        f_py3_req: str = "Python 3 is required."
-        f_user_ver: str = "Your version is v~VERSION~."
-        f_bad_path: str = "Path could not be reached: "
-        f_bad_log_path: str = "Log file path does not exist." +\
-            "\nUser must create directory or pick a valid one."
-        f_log_lvl_req: str = "Log level must be one of: "
-        f_login_failed: str =\
-            "Login connection failed. See response text in log." +\
-            "\n Probably a captcha. May want to wait a few hours."
-        f_apikey_failed: str = "Verification of eRep Tools API key failed. "
-        f_profile_id_failed: str = "Invalid eRepublik Profile ID: "
 
     @dataclass
     class logm:
@@ -156,6 +152,7 @@ class Texts(object):
         ll_log_lvl: str = "Log level :"
         ll_logout_cd: str = "Logout status code: "
         ll_login_cd: str = "Login status code: "
+        ll_friends_cd: str = "Friends request status code: "
         ll_save_logout_resp: str =\
             "Logout response/redirect text saved to log dir."
         ll_save_login_resp: str = "Login response text saved to log dir."
@@ -165,3 +162,18 @@ class Texts(object):
             "Citizen profile data read from cached file for ID: "
         ll_profile_file_cached: str =\
             "Citizen profile data written to cache file for ID: "
+
+    @dataclass
+    class shit:
+        """Error and warning messages."""
+
+        f_py3_req: str = "Python 3 is required."
+        f_user_ver: str = "Your version is v~VERSION~."
+        f_bad_path: str = "Path could not be reached: "
+        f_log_lvl_req: str = "Log level must be one of: "
+        f_login_failed: str =\
+            "Login connection failed. See response text in log." +\
+            "\n Probably a captcha. May want to wait a few hours."
+        f_apikey_failed: str = "Verification of eRep Tools API key failed. "
+        f_profile_id_failed: str = "Invalid eRepublik Profile ID: "
+        f_upsert_failed: str = "Cannot upsert. Record not found or OID not matched."

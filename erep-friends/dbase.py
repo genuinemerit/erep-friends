@@ -2,7 +2,7 @@
 #!/usr/bin/python3  # noqa: E265
 
 """
-Simple database manager for ErepFriends using sqlite3.
+Simple database manager for erep-freinds using sqlite3.
 
 This is a write-only database system.
 Records are modified only when logically deleted.
@@ -10,16 +10,16 @@ Records are removed only when a purge is run.
 
 uid = unique identifier primary key for each row.
 oid = logical identifier for a consistent object.
-profile_id = eRepublik-provided citizen (player) ID
+profile_id = eRepublik-provided citizen (player) ID.
 create_ts = when the original oid was added to db.
-update_ts = when a given row was created ("updated").
-delete_ts = when a given row was logically deleted.
+update_ts = when a physical row (uid) was created ("upserted").
+delete_ts = when a physical row (uid) was logically deleted.
 hash_id = hash of all non-audit values in a row.
 
 Non-audit values on the user table are encrypted
 at the column level. If file-level encryption is
-desired, use sqlite management tool for that; not
-presently an option that is enabled via this app.
+desired, use sqlite management tool for that.
+Not presently an option managed via this app.
 
 Module:    dbase
 Class:     Dbase
@@ -63,37 +63,20 @@ class Dbase(object):
         """Define non-standard data types."""
 
         dbaction = Literal['add', 'upd', 'del']
-        tblnames = Literal['config', 'user', 'citizen']
+        tblnames = Literal['user', 'citizen']
 
-    def config_main_db(self):
-        """Define main database location."""
-        self.ST.ConfigFields.main_db_path =\
-            path.abspath(path.realpath(self.ST.ConfigFields.db_dir_path))
-        if not Path(self.ST.ConfigFields.main_db_path).exists():
-            msg = TX.shit.f_bad_path + self.ST.ConfigFields.main_db_path
+    def create_main_db(self):
+        """Create main database."""
+        db_path = path.join(UT.get_home(), TX.dbs.db_path)
+        if not Path(db_path).exists():
+            msg = TX.shit.f_bad_path + db_path
             raise Exception(OSError, msg)
-        self.ST.ConfigFields.main_db =\
-            path.join(self.ST.ConfigFields.main_db_path,
-                      self.ST.ConfigFields.db_name)
-
-    def config_bkup_db(self,
-                       p_bkup_db_path: str) -> tuple:
-        """Define DB configuration. Load values from parameters.
-
-        Args:
-            p_bkup_db_path (string): full parent path to backup dbs
-        Returns:
-            tuple: (str: full bkup db dir, str: full bkup db path)
-        """
-        bkup_db_path = path.abspath(path.realpath(p_bkup_db_path))
-        if not Path(bkup_db_path).exists():
-            msg = TX.shit.f_bad_path + p_bkup_db_path
-            raise Exception(IOError, msg)
-        bkup_db = path.join(bkup_db_path, self.ST.ConfigFields.db_name)
-        return(bkup_db_path, bkup_db)
+        db_full_path = path.join(db_path, TX.dbs.db_name)
+        if not Path(db_full_path).exists():
+            self.create_tables(db_full_path)
 
     def disconnect_dmain(self):
-        """Drop connection to main database at configured path."""
+        """Drop connection to main database at specified path."""
         if hasattr(self, "dmain_conn") and self.dmain_conn is not None:
             try:
                 self.dmain_conn.close()
@@ -102,7 +85,7 @@ class Dbase(object):
         self.dmain_conn = None
 
     def connect_dmain(self, p_main_db):
-        """Open connection to main database at configured path.
+        """Open connection to main database at specified path.
 
         Create a db file if one does not already exist.
 
@@ -113,7 +96,7 @@ class Dbase(object):
         self.dmain_conn = sq3.connect(p_main_db)
 
     def disconnect_dbkup(self):
-        """Drop connection to backup database at configured path."""
+        """Drop connection to backup database at specified path."""
         if hasattr(self, "dbkup_conn") and self.dbkup_conn is not None:
             try:
                 self.dbkup_conn.close()
@@ -122,7 +105,7 @@ class Dbase(object):
         self.dbkup_conn = None
 
     def connect_dbkup(self, p_bkup_db):
-        """Open connection to backup database at configured path.
+        """Open connection to backup database at specified path.
 
         Args:
             p_bkup_db (str): full path to backup DB file
@@ -131,7 +114,7 @@ class Dbase(object):
         self.dbkup_conn = sq3.connect(p_bkup_db)
 
     def disconnect_darcv(self):
-        """Drop connection to archive database at configured path."""
+        """Drop connection to archive database at specified path."""
         if hasattr(self, "darcv_conn") and self.darcv_conn is not None:
             try:
                 self.darcv_conn.close()
@@ -140,7 +123,7 @@ class Dbase(object):
         self.darcv_conn = None
 
     def connect_darcv(self, p_arcv_db):
-        """Open connection to archive database at configured path.
+        """Open connection to archive database at specified path.
 
         Args:
             p_arcv_db (str): full path to archive DB file
@@ -149,39 +132,39 @@ class Dbase(object):
         self.darcv_conn = sq3.connect(p_arcv_db)
 
     def get_data_keys(self, p_tbl_nm: Types.tblnames) -> list:
-        """Get "data" class column names for selected DB table.
+        """Get 'data' class column names for selected DB table.
 
         Args:
-            p_tbl_nm (Types.tblnames): config, user, citizen
+            p_tbl_nm (Types.tblnames): user, citizen
         Returns:
             list: of "data" dataclass column names
         """
         data_keys =\
-            self.ST.ConfigFields.keys() if p_tbl_nm == 'config'\
-            else self.ST.UserFields.keys() if p_tbl_nm == 'user'\
+            self.ST.UserFields.keys() if p_tbl_nm == 'user'\
             else self.ST.CitizenFields.keys()
         return data_keys
 
-    def create_tables(self):
+    def create_tables(self, p_db_path: str):
         """Create DB tables on main database.
+
+        Args:
+            p_db_path (str): Ful path to main DB location.
 
         Raises:
             Fail if cursor connection has not been established.
         """
-        self.connect_dmain(self.ST.ConfigFields.main_db)
+        self.connect_dmain(p_db_path)
         cur = self.dmain_conn.cursor()
-        for tbl_nm in ['config', 'user', 'citizen']:
-            # Does table already exist?
+        for tbl_nm in ['user', 'citizen']:
             sql = "SELECT name FROM sqlite_master " +\
                 "WHERE type='table' AND name='{}';".format(tbl_nm)
             cur.execute(sql)
             result = cur.fetchall()
-            # No...
+            # Table does not exist...
             if len(result) == 0:
                 data_keys = self.get_data_keys(tbl_nm)
                 col_nms = data_keys + self.ST.AuditFields.keys()
                 for ix, col in enumerate(col_nms):
-                    # ix = col_nms.index(col)
                     if col == "encrypt_key":
                         col_nms[ix] = col + " BLOB"
                     else:
@@ -202,14 +185,13 @@ class Dbase(object):
         Create a backup database file if it does not exist, else
           overwrite existing backup DB file.
         """
-        cfd = self.query_config_data()
-        if (cfd.bkup_db
-                and cfd.bkup_db not in (None, 'None')):
-            self.connect_dmain(cfd.main_db)
-            self.connect_dbkup(cfd.bkup_db)
-            self.dmain_conn.backup(self.dbkup_conn, pages=0, progress=None)
-            self.disconnect_dmain()
-            self.disconnect_dbkup()
+        main_db = path.join(UT.get_home(), TX.dbs.db_path, TX.dbs.db_name)
+        bkup_db = path.join(UT.get_home(), TX.dbs.bkup_path, TX.dbs.db_name)
+        self.connect_dmain(main_db)
+        self.connect_dbkup(bkup_db)
+        self.dmain_conn.backup(self.dbkup_conn, pages=0, progress=None)
+        self.disconnect_dmain()
+        self.disconnect_dbkup()
 
     def archive_db(self):
         """Make full backup of main database witha timestamp.
@@ -217,16 +199,15 @@ class Dbase(object):
         Distinct from regular backup file. A time-stamped, one-time copy.
         Make a point-in-time copy, e.g., prior to doing a purge.
         """
-        cfd = self.query_config_data()
-        if (cfd.arcv_db
-                and cfd.arcv_db not in (None, 'None')):
-            dttm = UT.get_dttm('UTC')
-            arcv_db = cfd.arcv_db + "." + dttm.curr_ts
-            self.connect_dmain(cfd.main_db)
-            self.connect_darcv(arcv_db)
-            self.dmain_conn.backup(self.darcv_conn, pages=0, progress=None)
-            self.disconnect_dmain()
-            self.disconnect_darcv()
+        main_db = path.join(UT.get_home(), TX.dbs.db_path, TX.dbs.db_name)
+        dttm = UT.get_dttm('UTC')
+        arcv_db = path.join(UT.get_home(), TX.dbs.arcv_path,
+                            "{}.{}".format(TX.dbs.db_name, dttm.curr_ts))
+        self.connect_dmain(main_db)
+        self.connect_darcv(arcv_db)
+        self.dmain_conn.backup(self.darcv_conn, pages=0, progress=None)
+        self.disconnect_dmain()
+        self.disconnect_darcv()
 
     def set_insert_sql(self,
                        p_tbl_nm: Types.tblnames,
@@ -235,7 +216,7 @@ class Dbase(object):
         """Format SQL for an INSERT.
 
         Args:
-            p_tbl_nm (Types.tblnames -> str): user, citizen, configs
+            p_tbl_nm (Types.tblnames -> str): user, citizen
             p_data_rec (dict): mirrors a "data" dataclass
             p_audit_rec (dict): mirrors the "audit" dataclass
 
@@ -308,21 +289,19 @@ class Dbase(object):
         """Get the latest non-deleted record(s) for selected table.
 
         Args:
-            p_tbl_nm (Types.tblnames -> str): user, citizen, config
-            p_oid (str): Ignored except for citizen, when it is required.
+            p_tbl_nm (Types.tblnames -> str): user, citizen
+            p_oid (str): Required for citizen.
             p_single (bool): If True, return only latest row even if there are
                              multiples with NULL delete_ts. If False, return
                              all latest rows that have a NULL delete_ts.
 
         Returns:
-            dict ("data": ..., "audit", ...) for user, config or
+            dict ("data": ..., "audit", ...) for user   OR
             list (of dicts like this ^) for citizen
         """
         db_recs = None
         if p_tbl_nm == "user":
             db_recs = self.query_user(p_single)
-        elif p_tbl_nm == "config":
-            db_recs = self.query_config(p_single)
         elif p_tbl_nm == "citizen":
             db_recs = self.query_citizen_by_oid(p_oid, p_single)
         return db_recs
@@ -333,7 +312,7 @@ class Dbase(object):
         """Format one logically new row for main database.
 
         Args:
-            p_tbl_nm (Types.tblnames -> str): user, citizen, config
+            p_tbl_nm (Types.tblnames -> str): user, citizen
             p_data (dict): mirrors a "data" dataclass
 
         Returns:
@@ -369,9 +348,9 @@ class Dbase(object):
         Do nothing if no value-changes are detected.
 
         Args:
-            p_tbl_nm (Types.tblnames -> str): user, citizen, config
+            p_tbl_nm (Types.tblnames -> str): user, citizen
             p_data (dict): that mirrors a "data" dataclass
-            p_oid (str): Unique Identifier of record to be updated
+            p_oid (str): Object ID of record to be updated
 
         Returns:
             tuple: (dict: "data":.., dict: "audit":..,
@@ -382,7 +361,7 @@ class Dbase(object):
         aud = UT.make_namedtuple("aud", recs["audit"])
         dat = UT.make_namedtuple("dat", recs["data"])
         if not aud or aud.oid != p_oid:
-            msg = "Cannot upsert. Record not found or PID not matched."
+            msg = TX.shit.f_upsert_failed
             raise Exception(ValueError, msg)
         audit_rec = UT.make_dict(self.ST.AuditFields.keys(), aud)
         audit_rec["uid"] = UT.get_uid()
@@ -403,7 +382,12 @@ class Dbase(object):
     def set_logical_delete_sql(self,
                                p_tbl_nm: Types.tblnames,
                                p_oid: str):
-        """Store non-NULL delete_ts on previously-active record."""
+        """Store non-NULL delete_ts on previously-active record.
+
+        Args:
+            p_tbl_nm (Types.tblnames -> str): user, citizen
+            p_oid (str): Object ID of record to be marked as deleted.
+        """
         recs = self.query_latest(p_tbl_nm, p_oid, False)
         try:
             aud = UT.make_namedtuple("aud", recs[0]["audit"])
@@ -425,7 +409,7 @@ class Dbase(object):
 
         Args:
             p_db_action (Types.dbaction -> string): add, upd, del
-            p_tbl_nm (Types.tblnames -> str): user, citizen, config
+            p_tbl_nm (Types.tblnames -> str): user, citizen
             p_sql (string): the SQL statement to execute
             p_oid (string): if updating a record, used to delete previous
             p_encrypt_key (string): if adding or updating a user record
@@ -457,7 +441,7 @@ class Dbase(object):
 
         Args:
             p_db_action (Types.dbaction -> str): add, upd, del
-            p_tbl_nm (Types.tblnames -> str): user, citizen, config
+            p_tbl_nm (Types.tblnames -> str): user, citizen
             p_data (dict): mirrors a "data" dataclass. None if "del".
             p_oid (string): Required for upd, del. Default is None.
         """
@@ -508,18 +492,17 @@ class Dbase(object):
           all values set to None, which is odd since then
           we get a rowcount > 0. Sqlite also returns an extra
           timestamp at the end of the tuple.
-        To facilitate data management on the return side,
-          cast each row of returned data into a namedtuple that
-          mirrors a Struct DB schema dataclass and put those in a list.
-          Ignore the row if it has all None values.
+        Cast each row of returned data into a namedtuple that
+          mirrors a Struct DB schema dataclass. Put those in a list.
+          Ignore row if it has all None values.
 
         Args:
-            p_tbl_nm (Types.tblnames -> str): config, user, citizen
+            p_tbl_nm (Types.tblnames -> str): user, citizen
             p_result (sqlite result set -> list): list of tuples
 
         Returns:
             list: each row is dict of dicts keyed by "data", "audit",
-                  mirroring the appropriate dataclass DB structures
+                  mirroring appropriate dataclass DB structures
         """
         def init_recs():
             dat_rec = dict()
@@ -534,8 +517,7 @@ class Dbase(object):
         dat_keys = self.get_data_keys(p_tbl_nm)
         aud_keys = self.ST.AuditFields.keys()
         col_nms = dat_keys + aud_keys
-        dat_dflt = self.ST.ConfigFields if p_tbl_nm == 'config'\
-            else self.ST.UserFields if p_tbl_nm == 'user'\
+        dat_dflt = self.ST.UserFields if p_tbl_nm == 'user'\
             else self.ST.CitizenFields
         max_ix = len(col_nms) - 1
 
@@ -569,11 +551,10 @@ class Dbase(object):
 
         Returns:
             dict: of (dicts keyed by "data", "audit")  or
-            list of dicts liked that ^  or
+            list of dicts like that ^  or
             None if no rows found
         """
-        data_cols = self.ST.ConfigFields.keys() if p_tbl_nm == "config"\
-            else self.ST.UserFields.keys() if p_tbl_nm == "user"\
+        data_cols = self.ST.UserFields.keys() if p_tbl_nm == "user"\
             else self.ST.CitizenFields.keys()
         col_nms = data_cols + self.ST.AuditFields.keys()
         col_nms_txt = ", ".join(col_nms)
@@ -581,7 +562,7 @@ class Dbase(object):
         if p_single:
             sql += "MAX(update_ts)"
         else:
-            sql = sql[:-2]      # remove trailing comma and space
+            sql = sql[:-2]
         sql += " FROM {} ".format(p_tbl_nm)
         sql += "WHERE delete_ts IS NULL;"
         recs = self.execute_query_sql(p_tbl_nm, sql, p_single)
@@ -614,23 +595,6 @@ class Dbase(object):
             data_recs = data_recs[0]
         return data_recs
 
-    def query_config(self, p_single=True) -> object:
-        """Run read-only query against the user table.
-
-        Args:
-            p_single (bool): If True, return only the latest row
-
-        Returns:
-            dict: of (dicts keyed by "data", "audit")
-        """
-        return self.format_query_sql("config", p_single)
-
-    def query_config_data(self) -> namedtuple:
-        """Query config info. Return only 'data' section as namedtuple."""
-        cf = self.query_config()
-        cfd = UT.make_namedtuple("cfd", cf["data"])
-        return cfd
-
     def query_user(self, p_single=True) -> dict:
         """Run read-only query against the user table.
 
@@ -650,7 +614,7 @@ class Dbase(object):
         Return latest non-deleted record that matches on PID.
 
         Args:
-            p_oid (str): ErepFriends DB logical object identifier
+            p_oid (str): erep-friends DB unique object ID
             p_single (bool): If True, return only latest row
 
         Returns:
@@ -728,37 +692,24 @@ class Dbase(object):
         return id_list
 
     # ================  untested code =========================
-    def destroy_db(self, db_path: str) -> bool:
-        """Delete the specified database file.
-
-        File to be removed must match a configured DB path
+    def destroy_all_dbs(self, db_path: str):
+        """Delete all database files.
 
         Args:
             db_path (string): Full path to the .db file
 
         Returns:
             bool: True if db_path legit points to a file
-        """
-        main_full_path = self.set_dmain_path()
-        bkup_full_path = self.set_dbkup_path()
-        arcv_full_path = self.set_darcv_path()
-        arcv_path = Path(arcv_full_path).parent
-        destroy_full_path = path.abspath(path.realpath(db_path))
-        destroy_path = Path(destroy_full_path).parent
-        if destroy_full_path in (main_full_path, bkup_full_path,
-                                 arcv_full_path)\
-           or destroy_path == arcv_path:
-            if not Path(destroy_full_path).exists():
-                msg = "{} could not be reached".format(destroy_full_path)
-                raise Exception(IOError, msg)
-            remove(destroy_full_path)
-            return True
-        else:
-            msg = "{} out of scope".format(destroy_full_path)
-            raise Exception(IOError, msg)
-        return False
 
-    def purge_rows(self, p_oids: list, cur: object):
+        @DEV - Add logging messages
+        @DEV - Destroy only specific DBs
+        """
+        for d_path in [path.join(UT.get_home(), TX.dbs.db_path),
+                       path.join(UT.get_home(), TX.dbs.bkup_path),
+                       path.join(UT.get_home(), TX.dbs.arcv_path)]:
+            remove(d_path)
+
+    def purge_rows(self, p_oids: list, p_cursor: object):
         """Physically delete a row from citizen table on main db.
 
         Args:
@@ -771,7 +722,7 @@ class Dbase(object):
             d_delete_ts = row[1]
             sql = "DELETE citizen WHERE uid = '{}' ".format(d_oid)
             sql += "AND delete_ts = '{}';".format(d_delete_ts)
-            cur.execute(sql)
+            p_cursor.execute(sql)
 
     def purge_db(self):
         """Remove rows from main db citizen table."""
@@ -784,8 +735,8 @@ class Dbase(object):
         sql += "WHERE delete_ts < '{}' ".format(dttm.curr_utc)
         sql += "AND delete_ts IS NOT NULL;"
 
-        cfd = self.query_config_data()
-        self.connect_dmain(cfd.main_db)
+        main_db = path.join(UT.get_home(), TX.dbs.db_path, TX.dbs.db_name)
+        self.connect_dmain(main_db)
         cur = self.dmain_conn.cursor()
         oid_list = [row for row in cur.execute(sql)]
         self.purge_rows(cur, oid_list)

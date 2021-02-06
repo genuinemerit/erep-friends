@@ -13,7 +13,7 @@ import sys
 import time
 from collections import namedtuple
 from copy import copy
-from os import path
+from os import mkdir, path
 from pathlib import Path
 from pprint import pprint as pp  # noqa: F401
 
@@ -70,19 +70,18 @@ class Controls(object):
     def configure_database(self):
         """Instantiate Dbase object.
 
+        Create local app file, db directories if needed.
         Create main DB file and tables if needed.
-
-        @DEV --Let's assume that the db and logs will go into
-        ~/.erep-friends/db. That might be simpler.
-        Maybe still give an option to move them somewhere else.
         """
-        DB.config_main_db()
-        if not Path(ST.ConfigFields.main_db).exists():
-            DB.create_tables()
-            cfg_rec = dict()
-            for cnm in ST.ConfigFields.keys():
-                cfg_rec[cnm] = copy(getattr(ST.ConfigFields, cnm))
-            DB.write_db('add', 'config', cfg_rec)
+        HOME = UT.get_home()
+        app_path = path.join(HOME, TX.dbs.lcl_path)
+        if not Path(app_path).exists():
+            mkdir(app_path, 0755)
+            for f_path in (TX.dbs.db_path, TX.dbs.cache_path, TX.dbs.log_path,
+                           TX.dbs.bkup_path, TX.dbs.arcv_path)
+                mk_path = path.join(HOME, f_path)
+                mkdir(mk_path, 0755)
+        DB.create_main_db()
         return ST
 
     def convert_data_record(self,
@@ -103,11 +102,6 @@ class Controls(object):
             dat = UT.make_namedtuple("dat", p_data_rows["data"])
             aud = UT.make_namedtuple("aud", p_data_rows["audit"])
             return (dat, aud)
-
-    def get_config_data(self) -> tuple:
-        """Query data base for most current config record."""
-        return self.convert_data_record(
-            DB.query_config())
 
     def get_user_db_record(self) -> tuple:
         """Query data base for most current user record, decrypted."""
@@ -132,86 +126,62 @@ class Controls(object):
         return self.convert_data_record(
             DB.query_citizen_by_name(p_citzn_nm))
 
-    def enable_logging(self):
-        """Assign log file location. Instantiate Logger object."""
-        cfd, _ = self.get_config_data()
+    def enable_logging(self,
+                       p_log_level: str = 'INFO',
+                       p_log_path: str):
+        """Assign log file location. Instantiate Logger object.
+
+        Args:
+            p_log_level (str): valid logging level key. Default = 'INFO'.
+            p_log_path (str): full path to log file location
+        """
         self.logme = False
-        if (cfd.log_level not in (None, "None")
-                and cfd.log_level != ST.LogLevel.NOTSET):
+        log_level = getattr(ST.LogLevel, p_log_level)
+        if (log_level != ST.LogLevel.NOTSET):
             self.logme = True
-            log_file = path.join(cfd.log_path, cfd.log_name)
-            self.LOG = Logger(log_file, cfd.log_level)
+            self.LOG = Logger(p_log_path, log_level)
             self.LOG.set_log()
-            msg = TX.logm.ll_log_loc + log_file
+            msg = TX.logm.ll_log_loc + p_log_path
             self.LOG.write_log(ST.LogLevel.INFO, msg)
-            msg = TX.logm.ll_log_lvl + cfd.log_level
+            msg = TX.logm.ll_log_lvl + p_log_level
             self.LOG.write_log(ST.LogLevel.INFO, msg)
 
-    def configure_log(self,
-                      p_log_path: str,
-                      p_log_level: str) -> bool:
+    def create_log(self,
+                   p_log_level: str = 'INFO') -> bool:
         """Update config data with path to log file and log level.
 
         Args:
-            p_log_path (string) path to parent dir of log file
-            p_log_level (string) valid key to ST.LogLevel
+            p_log_level (string) valid key to ST.LogLevel. Default = 'INFO'.
 
         Returns:
             bool: True if logging successfully turned on, else False
         """
         self.logme = False
-        cfd, cfa = self.get_config_data()
-        if p_log_path and p_log_path not in (None, "None"):
-            log_path = p_log_path if p_log_path != cfd.log_path\
-                else cfd.log_path
-        if p_log_level and p_log_level not in (None, "None"):
-            log_level = p_log_level if p_log_level != cfd.log_level\
-                else cfd.log_level
-        log_path = path.abspath(path.realpath(log_path))
+        log_path = path.join(UT.get_home(), TX.dbs.log_path)
         if not Path(log_path).exists():
-            msg = TX.shit.f_bad_log_path
+            msg = "{}{}".format(TX.shit.f_bad_log_path, log_path)
             raise Exception(IOError, msg)
-        if log_level not in ST.LogLevel.keys():
+        if p_log_level not in ST.LogLevel.keys():
             msg = TX.shit.f_log_lvl_req + str(ST.LogLevel.keys)
             raise Exception(ValueError, msg)
-        data_rec = dict()
-        for cnm in ST.ConfigFields.keys():
-            if cnm == "log_path":
-                data_rec[cnm] = log_path
-            elif cnm == "log_level":
-                data_rec[cnm] = log_level
-            else:
-                data_rec[cnm] = copy(getattr(cfd, cnm))
-        DB.write_db('upd', 'config', data_rec, cfa.oid)
-        self.enable_logging()
+        log_full_path = path.join(log_path, TX.dbs.log_name)
+        self.enable_logging(p_log_level, log_full_path)
         return self.logme
 
-    def configure_backups(self, p_bkup_db_path: str) -> bool:
-        """Set location of backup and archive databases. Initialize them.
-
-        Args:
-            p_bkup_db_path (string) path to parent dir of db backup files
-        Returns:
-            True if backup DB was configured. (Method does not fail.)
-        """
-        cfd, cfa = self.get_config_data()
-        bkup_db_path, bkup_db = DB.config_bkup_db(p_bkup_db_path)
-        data_rec = UT.make_dict(ST.ConfigFields.keys(), cfd)
-        data_rec["bkup_db_path"] = bkup_db_path
-        data_rec["bkup_db"] = bkup_db
-        data_rec["arcv_db_path"] = bkup_db_path
-        data_rec["arcv_db"] = bkup_db
-        DB.write_db('upd', 'config', data_rec, cfa.oid)
+    def create_bkupdb(self):
+        """Create backup database."""
+        bkup_path = path.join(UT.get_home(), TX.dbs.bkup_path)
+        if not Path(bkup_path).exists():
+            msg = "{}{}".format(TX.shit.f_bad_log_path, bkup_path)
+            raise Exception(IOError, msg)
+        arcv_path = path.join(UT.get_home(), TX.dbs.arcv_path)
+        if not Path(arcv_path).exists():
+            msg = "{}{}".format(TX.shit.f_bad_log_path, arcv_path)
+            raise Exception(IOError, msg)
         DB.backup_db()
-        return True
 
-    def logout_erep(self,
-                    p_cfd: namedtuple):
-        """Logout from eRepublik. Assume 302 (redirect) is a good response.
-
-        Args:
-            p_cfd (namedtuple): data info from configs table
-        """
+    def logout_erep(self):
+        """Logout from eRepublik. Assume 302 (redirect) is good response."""
         if self.erep_csrf_token is not None:
             formdata = {'_token': self.erep_csrf_token,
                         "remember": '1',
@@ -240,13 +210,11 @@ class Controls(object):
         self.erep_csrf_token = parse_text[0]
 
     def parse_user_info(self,
-                        response_text: str,
-                        p_cfd: namedtuple) -> namedtuple:
+                        response_text: str) -> namedtuple:
         """Extract ID and name from response text.
 
         Args:
             response_text (string): full response text from eRep login GET
-            p_cfd (namedtuple): data info from configs table
 
         Returns:
             namedtuple: (id_info: profile_id, user_name)
@@ -265,21 +233,17 @@ class Controls(object):
             self.LOG.write_log(ST.LogLevel.INFO, msg)
         return id_info
 
-    def get_local_login_file(self,
-                             p_cfd: dict) -> str:
+    def get_cached_login_file(self) -> str:
         """Use local copy of login response if available.
-
-        Args:
-            p_cfd (dict): data info from config table
 
         Returns:
             text or bool: full response.text from eRep login GET  or  False
         """
-        login_file = path.abspath(path.join(p_cfd.log_path,
-                                            "login_response"))
+        cache_file = path.join(UT.get_home(), TX.dbs.cache_path,
+                               "login_response")
         response_text = False
-        if Path(login_file).exists():
-            with open(login_file) as lf:
+        if Path(cache_file).exists():
+            with open(cache_file) as lf:
                 response_text = lf.read()
                 lf.close()
         return response_text
@@ -302,13 +266,11 @@ class Controls(object):
         Returns:
             text: full response.text from eRep login GET  or  None
         """
-        cfd, _ = self.get_config_data()
-        self.logout_erep(cfd)
+        self.logout_erep()
         time.sleep(.300)
-
         response_text = False
         if p_use_response_file:
-            response_text = self.get_local_login_file(cfd)
+            response_text = self.get_cached_login_file()
             if response_text:
                 if self.logme:
                     msg = TX.logm.ll_cached_login
@@ -329,14 +291,15 @@ class Controls(object):
                 self.get_token(response.text)
                 response_text = response.text
                 if p_use_response_file:
-                    with open(path.abspath(path.join(cfd.log_path,
-                              "login_response")), "w") as f:
+                    cache_file = path.join(UT.get_home(), TX.dbs.cache_path,
+                                           "login_response")
+                    with open(cache_file, "w") as f:
                         f.write(response.text)
             else:
                 msg = TX.shit.f_login_failed
                 raise Exception(ConnectionError, msg)
-        id_info = self.parse_user_info(response_text, cfd)
-        self.logout_erep(cfd)
+        id_info = self.parse_user_info(response_text)
+        self.logout_erep()
         return id_info
 
     def verify_api_key(self,
@@ -371,8 +334,7 @@ class Controls(object):
     def close_controls(self):
         """Close connections. Close the log."""
         if self.erep_csrf_token is not None:
-            cfd, _ = self.get_config_data()
-            self.logout_erep(cfd)
+            self.logout_erep()
         try:
             self.LOG.close_logs()
         except Exception:
@@ -470,14 +432,12 @@ class Controls(object):
 
     def get_citizen_party_data(self,
                                profile_data: dict,
-                               p_citrec: dict,
-                               p_cfd: namedtuple) -> dict:
+                               p_citrec: dict) -> dict:
         """Extract citizen party data from profile response.
 
         Args:
             profile_data (dict): returned from eRep
             p_citrec (dict): mirrors ST.CitizenFields
-            p_cfd (namedtuple): data from configs table
 
         Returns:
             dict: updated p_citrec
@@ -501,14 +461,12 @@ class Controls(object):
 
     def get_citizen_military_data(self,
                                   profile_data: dict,
-                                  p_citrec: dict,
-                                  p_cfd: namedtuple) -> dict:
+                                  p_citrec: dict) -> dict:
         """Extract citizen military data from profile response.
 
         Args:
             profile_data (dict): returned from eRep
             p_citrec (dict): mirrors ST.CitizenFields
-            p_cfd (namedtuple): data from configs table
 
         Returns:
             dict: updated p_citrec
@@ -541,14 +499,12 @@ class Controls(object):
 
     def get_citizen_press_data(self,
                                profile_data: dict,
-                               p_citrec: dict,
-                               p_cfd: namedtuple) -> dict:
+                               p_citrec: dict) -> dict:
         """Extract citizen presss data from profile response.
 
         Args:
             profile_data (dict): returned from eRep
             p_citrec (dict): mirrors ST.CitizenFields
-            p_cfd (namedtuple): data and audit from configs table
 
         Returns:
             dict: updated p_citrec
@@ -585,14 +541,13 @@ class Controls(object):
         Returns:
             dict: modeled on ST.CitizenFields dataclass
         """
-        cfd, _ = self.get_config_data()
         citrec = dict()
         for cnm in ST.CitizenFields.keys():
             citrec[cnm] = copy(getattr(ST.CitizenFields, cnm))
-        file_nm = "profile_response_{}".format(p_profile_id)
-        profile_file = path.abspath(path.join(cfd.log_path, file_nm))
-        if Path(profile_file).exists() and p_use_file:
-            with open(profile_file) as pf:
+        cache_file = path.join(UT.get_home(), TX.dbs.cache_path,
+                               "profile_response_{}".format(p_profile_id))
+        if Path(cache_file).exists() and p_use_file:
+            with open(cache_file) as pf:
                 profile_data = json.loads(pf.read())
             if self.logme:
                 msg = TX.logm.ll_cached_profile + str(p_profile_id)
@@ -605,7 +560,7 @@ class Controls(object):
                 msg = TX.shit.f_profile_id_failed + p_profile_id
                 raise Exception(ValueError, msg)
             profile_data = json.loads(response.text)
-            with open(profile_file, "w") as f:
+            with open(cache_file, "w") as f:
                 f.write(str(response.text))
             if self.logme:
                 msg = TX.logm.ll_profile_file_cached + p_profile_id
@@ -614,9 +569,9 @@ class Controls(object):
         citrec["profile_id"] = p_profile_id
         citrec = self.get_basic_citizen_profile(profile_data, citrec)
         citrec = self.get_citizen_location_data(profile_data, citrec)
-        citrec = self.get_citizen_party_data(profile_data, citrec, cfd)
-        citrec = self.get_citizen_military_data(profile_data, citrec, cfd)
-        citrec = self.get_citizen_press_data(profile_data, citrec, cfd)
+        citrec = self.get_citizen_party_data(profile_data, citrec)
+        citrec = self.get_citizen_military_data(profile_data, citrec)
+        citrec = self.get_citizen_press_data(profile_data, citrec)
         return citrec
 
     def write_user_rec(self,
@@ -675,7 +630,6 @@ class Controls(object):
         Returns:
             response text
         """
-        cfd, _ = self.get_config_data()
         usrd, _ = self.get_user_db_record()
         self.verify_citizen_credentials(usrd.user_erep_email,
                                         usrd.user_erep_password,
@@ -695,13 +649,13 @@ class Controls(object):
                                            headers=msg_headers,
                                            allow_redirects=False)
         if self.logme:
-            msg = "Get friends list request response code: "
-            msg += str(msg_response.status_code)
+            msg = ll_friends_cd + str(msg_response.status_code)
             self.LOG.write_log(ST.LogLevel.INFO, msg)
-        with open(path.abspath(path.join(cfd.log_path,
-                                         "friends_response")), "w") as f:
+        cache_file = path.join(UT.get_home(), TX.dbs.cache_file,
+                               "friends_response")
+        with open(cache_file, "w") as f:
             f.write(msg_response.text)
-        self.logout_erep(cfd)
+        self.logout_erep()
         return msg_response.text
 
     def get_erep_citizen_by_id(self,
@@ -852,11 +806,10 @@ class Controls(object):
         Returns:
             str: detail-level message about successful calls
         """
-        cfd, _ = self.get_config_data()
-        friends_file = path.abspath(path.join(cfd.log_path,
-                                              "friends_response"))
-        if p_use_file and Path(friends_file).exists():
-            with open(friends_file) as ff:
+        cache_file = path.join(UT.get_home(), TX.dbs.cache_path,
+                               "friends_response")
+        if p_use_file and Path(cache_file).exists():
+            with open(cache_file) as ff:
                 friends_data = ff.read()
                 ff.close()
             if self.logme:

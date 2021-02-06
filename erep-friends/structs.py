@@ -95,26 +95,6 @@ class Structs(object):
             return list(Structs.AuditFields.__dataclass_fields__.keys())
 
     @dataclass
-    class ConfigFields:
-        """Define configuration items."""
-
-        db_dir_path: str = './ErepFriends/db'
-        db_name: str = 'efriends.db'
-        log_name: str = 'efriends.log'
-        log_path: str = None
-        log_level: str = None
-        main_db_path: str = None
-        main_db: str = None
-        bkup_db_path: str = None
-        bkup_db: str = None
-        arcv_db_path: str = None
-        arcv_db: str = None
-
-        def keys():
-            """Get column names."""
-            return list(Structs.ConfigFields.__dataclass_fields__.keys())
-
-    @dataclass
     class UserFields:
         """Define non-audit columns on user table."""
 

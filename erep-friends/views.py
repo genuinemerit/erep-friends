@@ -37,6 +37,8 @@ class Views(object):
         CN.check_python_version()
         CN.set_erep_headers()
         self.ST = CN.configure_database()
+        CN.create_log('INFO')
+        CN.create_bkupdb()
         self.set_basic_interface()
         if not self.check_user():
             self.set_menu_item(TX.menu.m_win, TX.menu.i_coll, "disable")
@@ -123,25 +125,14 @@ class Views(object):
         webview.create_window(TX.title.t_about, url)
         webview.start()
 
-    def save_log_config(self):
-        """Handle updates to log info."""
-        log_path = str(self.log_loc.get()).strip()
+    def save_log_level(self):
+        """Handle updates to log level."""
         log_level = str(self.log_lvl_val.get()).strip()
-        logging_on = CN.configure_log(log_path, log_level)
-        if logging_on:
+        ok = CN.create_log(log_level)
+        if ok:
             msg, detail = self.update_msg("", "",
                                           TX.msg.n_log_cfg,
                                           TX.msg.n_logging_on)
-            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
-
-    def save_bkup_config(self) -> tuple:
-        """Handle updates to DB backup paths."""
-        bkup_db_path = str(self.bkup_loc.get()).strip()
-        backups_configd = CN.configure_backups(bkup_db_path)
-        if backups_configd:
-            msg, detail = self.update_msg("", "",
-                                          TX.msg.n_bkup_cfg,
-                                          TX.msg.n_bkup_on)
             self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     def check_user(self) -> bool:
@@ -194,20 +185,6 @@ class Views(object):
             msg, detail = self.update_msg("", "",
                                           TX.msg.n_user_key_test, detail)
             self.make_message(self.ST.MsgLevel.INFO, msg, detail)
-
-    def select_log_dir(self):
-        """Browse for a log directory."""
-        dirname =\
-            filedialog.askdirectory(initialdir=UT.get_home(),
-                                    title=TX.button.b_pick_log_path)
-        self.log_loc.insert(0, dirname)
-
-    def select_bkup_dir(self):
-        """Browse for a backup directory."""
-        dirname =\
-            filedialog.askdirectory(initialdir=UT.get_home(),
-                                    title=TX.button.b_pick_bkup_path)
-        self.bkup_loc.insert(0, dirname)
 
     def collect_friends(self):
         """Login to and logout of erep using user credentials."""
@@ -267,7 +244,7 @@ class Views(object):
                 self.update_msg("", "", msg, detail)
                 self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
-    def select_id_file(self):
+    def select_profile_ids_file(self):
         """Select a file containing list of profile IDs."""
         ftypes = (("All", "*.*"), ("CSV", "*.csv"), ("Text", "*.txt"))
         idfile = filedialog.askopenfilename(initialdir=UT.get_home(),
@@ -275,7 +252,7 @@ class Views(object):
                                             filetypes=ftypes)
         self.idf_loc.insert(0, idfile)
 
-    def refresh_from_file(self):
+    def refresh_citzns_from_file(self):
         """Collect/refresh citizen data based on a list of profile IDs.
 
         This will add any new IDs not yet on DB and refresh data for
@@ -290,7 +267,7 @@ class Views(object):
                                           detail)
             self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
-    def refresh_from_db(self):
+    def refresh_ctizns_from_db(self):
         """Refresh citizen data based on active profile IDs on DB."""
         msg = None
         ok, detail = CN.refresh_ctzn_data_from_db()
@@ -400,13 +377,13 @@ class Views(object):
                 self.idf_loc_set_btn =\
                     ttk.Button(self.collect_frame,
                                text=TX.button.b_get_file,
-                               command=self.select_id_file)
+                               command=self.select_profile_ids_file)
                 self.idf_loc_set_btn.grid(row=4, column=2,
                                           sticky=tk.W, padx=5)
                 self.idf_loc_get_btn =\
                     ttk.Button(self.collect_frame,
                                text=TX.button.b_get_ctzn_data,
-                               command=self.refresh_from_file)
+                               command=self.refresh_citzns_from_file)
                 self.idf_loc_get_btn.grid(row=4, column=3,
                                           sticky=tk.W, padx=5)
 
@@ -415,7 +392,7 @@ class Views(object):
                 self.db_refresh_btn =\
                     ttk.Button(self.collect_frame,
                                text=TX.button.b_get_ctzn_data,
-                               command=self.refresh_from_db)
+                               command=self.refresh_ctizns_from_db)
                 self.db_refresh_btn.grid(row=5, column=1,
                                          sticky=tk.W, padx=5)
 
@@ -435,23 +412,21 @@ class Views(object):
     def make_config_frame(self):
         """Construct frame for entering configuration info."""
 
-        def prep_data():
+        def prep_cfg_data():
             """Handle empty and None values."""
-            if cfd is not None:
-                if cfd.log_path not in (None, "None"):
-                    cf_dflt["log_loc"] = cfd.log_path
-                if cfd.log_level not in (None, "None"):
-                    cf_dflt["log_lvl"] = cfd.log_level
-                if cfd.bkup_db_path not in (None, "None"):
-                    cf_dflt["bkup_path"] = cfd.bkup_db_path
+            # Figure out a way to store current log level
+            # Maybe use a config file
+            # if cfd is not None:
+            #     if cfd.log_level not in (None, "None"):
+            #        cf_dflt["log_lvl"] = cfd.log_level
 
             if usrd is not None:
                 if usrd.user_erep_email not in (None, "None"):
-                    usr_dflt["email"] = usrd.user_erep_email
+                    usrd_dflt["email"] = usrd.user_erep_email
                 if usrd.user_erep_password not in (None, "None"):
-                    usr_dflt["passw"] = usrd.user_erep_password
+                    usrd_dflt["passw"] = usrd.user_erep_password
                 if usrd.user_tools_api_key not in (None, "None"):
-                    usr_dflt["apikey"] = usrd.user_tools_api_key
+                    usrd_dflt["apikey"] = usrd.user_tools_api_key
 
         def set_context():
             """Set root and frame. Enable/disable menu items."""
@@ -468,40 +443,21 @@ class Views(object):
 
         def set_labels():
             """Define and assign text to data entry labels."""
-            log_label = ttk.Label(self.cfg_frame,
-                                  text=TX.label.l_log_loc)
-            log_label.grid(row=1, column=0, sticky=tk.E, padx=5)
             loglvl_label = ttk.Label(self.cfg_frame,
                                      text=TX.label.l_log_lvl)
-            loglvl_label.grid(row=2, column=0, sticky=tk.E, padx=5)
-            bkup_label = ttk.Label(self.cfg_frame,
-                                   text=TX.label.l_bkup)
-            bkup_label.grid(row=3, column=0, sticky=tk.E, padx=5)
+            loglvl_label.grid(row=1, column=0, sticky=tk.E, padx=5)
             email_label = ttk.Label(self.cfg_frame,
                                     text=TX.label.l_email)
-            email_label.grid(row=4, column=0, sticky=tk.E, padx=5)
+            email_label.grid(row=2, column=0, sticky=tk.E, padx=5)
             passlabel = ttk.Label(self.cfg_frame,
                                   text=TX.label.l_passw)
-            passlabel.grid(row=5, column=0, sticky=tk.E, padx=5)
+            passlabel.grid(row=3, column=0, sticky=tk.E, padx=5)
             apikey_label = ttk.Label(self.cfg_frame,
                                      text=TX.label.l_apikey)
-            apikey_label.grid(row=6, column=0, sticky=tk.E, padx=5)
+            apikey_label.grid(row=4, column=0, sticky=tk.E, padx=5)
 
         def set_inputs():
             """Define and assign defaults to data input widgets."""
-
-            def set_log_loc_input():
-                """Save log location."""
-                self.log_loc = ttk.Entry(self.cfg_frame, width=50)
-                log_path_val = tk.StringVar(self.cfg_frame)
-                log_path_val.set(cf_dflt["log_loc"])
-                self.log_loc.insert(0, log_path_val.get())
-                self.log_loc.grid(row=1, column=1, sticky=tk.W, padx=5)
-                self.log_loc_btn =\
-                    ttk.Button(self.cfg_frame,
-                               text=TX.button.b_pick_log_path,
-                               command=self.select_log_dir)
-                self.log_loc_btn.grid(row=1, column=2, sticky=tk.W, padx=5)
 
             def set_log_level_input():
                 """Set logging level."""
@@ -517,75 +473,53 @@ class Views(object):
                 self.log_save_btn =\
                     ttk.Button(self.cfg_frame,
                                text=TX.button.b_save_log_cfg,
-                               command=self.save_log_config)
-                self.log_save_btn.grid(row=2, column=3, sticky=tk.W, padx=5)
-
-            def set_db_bkup_loc_input():
-                """Location for DB backup and archive files."""
-                self.bkup_loc = ttk.Entry(self.cfg_frame, width=50)
-                bkup_path_val = tk.StringVar(self.cfg_frame)
-                bkup_path_val.set(cf_dflt["bkup_path"])
-                self.bkup_loc.insert(0, bkup_path_val.get())
-                self.bkup_loc.grid(row=3, column=1, sticky=tk.W, padx=5)
-                self.bkup_loc_btn =\
-                    ttk.Button(self.cfg_frame,
-                               text=TX.button.b_pick_bkup_path,
-                               command=self.select_bkup_dir)
-                self.bkup_loc_btn.grid(row=3, column=2, sticky=tk.W, padx=5)
-                self.bkups_save_btn =\
-                    ttk.Button(self.cfg_frame,
-                               text=TX.button.b_save_bkup_cfg,
-                               command=self.save_bkup_config)
-                self.bkups_save_btn.grid(row=3, column=3, sticky=tk.W, padx=5)
+                               command=self.save_log_level)
+                self.log_save_btn.grid(row=1, column=3, sticky=tk.W, padx=5)
 
             def set_erep_email_input():
                 """User's eRepublik login email credential."""
                 self.email = ttk.Entry(self.cfg_frame, width=25)
                 email_val = tk.StringVar(self.cfg_frame)
-                email_val.set(usr_dflt["email"])
+                email_val.set(usrd_dflt["email"])
                 self.email.insert(0, email_val.get())
-                self.email.grid(row=4, column=1, sticky=tk.W, padx=5)
+                self.email.grid(row=2, column=1, sticky=tk.W, padx=5)
 
             def set_erep_password_input():
                 """User's eRepublik login password credential. Hidden input."""
                 self.passw = ttk.Entry(self.cfg_frame, width=25, show="*")
                 passw_val = tk.StringVar(self.cfg_frame)
-                passw_val.set(usr_dflt["passw"])
+                passw_val.set(usrd_dflt["passw"])
                 self.passw.insert(0, passw_val.get())
-                self.passw.grid(row=5, column=1, sticky=tk.W, padx=5)
+                self.passw.grid(row=3, column=1, sticky=tk.W, padx=5)
                 self.creds_save_btn =\
                     ttk.Button(self.cfg_frame,
                                text=TX.button.b_save_creds,
                                command=self.save_user_config)
-                self.creds_save_btn.grid(row=5, column=3, sticky=tk.W, padx=5)
+                self.creds_save_btn.grid(row=3, column=3, sticky=tk.W, padx=5)
 
             def set_apikey_input():
                 """User's eRepublik Tools API key. Hidden input."""
                 self.apikey = ttk.Entry(self.cfg_frame, width=30, show="*")
                 apikey_val = tk.StringVar(self.cfg_frame)
-                apikey_val.set(usr_dflt["apikey"])
+                apikey_val.set(usrd_dflt["apikey"])
                 self.apikey.insert(0, apikey_val.get())
-                self.apikey.grid(row=6, column=1, sticky=tk.W, padx=5)
+                self.apikey.grid(row=4, column=1, sticky=tk.W, padx=5)
                 self.apikey_save_btn =\
                     ttk.Button(self.cfg_frame,
                                text=TX.button.b_save_apikey,
                                command=self.save_apikey_config)
-                self.apikey_save_btn.grid(row=6, column=3, sticky=tk.W, padx=5)
+                self.apikey_save_btn.grid(row=4, column=3, sticky=tk.W, padx=5)
 
-            set_log_loc_input()
             set_log_level_input()
-            set_db_bkup_loc_input()
             set_erep_email_input()
             set_erep_password_input()
             set_apikey_input()
 
         # make_config_frame() MAIN:
         self.close_frame()
-        cf_dflt = {"log_loc": "", "log_lvl": "", "bkup_path": ""}
-        usr_dflt = {"email": "", "passw": "", "apikey": ""}
-        cfd, _ = CN.get_config_data()
+        usrd_dflt = {"email": "", "passw": "", "apikey": ""}
         usrd, _ = CN.get_user_db_record()
-        prep_data()
+        prep_cfg_data()
         set_context()
         set_labels()
         set_inputs()
