@@ -5,8 +5,16 @@ erep-friends
 To build an efriends distribution package:
 - `cd` to /dir/where/setup.py/resides
 - `python3 ./setup.py sdist bdist_wheel`
-To install this package:
-`python3 -m pip install -e /dir/where/setup.py/resides`
+To install this as a package:
+`sudo -H python3 -m pip install -e /dir/where/setup.py/resides`
+like...
+`sudo -H python3 -m pip install -e /home/dave/Dropbox/projects/erep-friends`
+(or install to your preferred python3 environment)
+
+Then, to make the program easily executable from command line:
+copy the following files to /usr/local/bin:
+~/erep-friends/efriends/efriends
+~/erep-friends/efriends/efriends.py
 """
 # IMPORTS
 from setuptools import setup, find_packages

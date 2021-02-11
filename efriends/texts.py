@@ -23,13 +23,13 @@ class Texts(object):
         """Window, frame, messagebox titles."""
 
         t_app: str = 'Analyze eRepublik Citizens Data'
-        t_cfg: str = 'Configure erep-friends'
+        t_cfg: str = 'Configure efriends'
         t_coll: str = 'Collect Citizen Data'
         t_info: str = "Information"
         t_warn: str = "Warning"
         t_error: str = "Error"
         t_guide: str = "User Guide"
-        t_about: str = "About erep-friends"
+        t_about: str = "About efriends"
 
     @dataclass
     class menu:
@@ -43,7 +43,7 @@ class Texts(object):
         i_save: str = 'Save'
         i_close: str = 'Close'
         i_quit: str = 'Exit'
-        i_cfg: str = 'Configure erep-friends'
+        i_cfg: str = 'Configure efriends'
         i_coll: str = 'Collect Citizen Data'
         i_docs: str = 'User Guide'
         i_about: str = 'About'
@@ -120,12 +120,12 @@ class Texts(object):
     @dataclass
     class dbs:
         """File and Database names."""
-        lcl_path: str = '.erep-friends'
-        db_path: str = '.erep-friends/db'
-        cache_path: str = '.erep-friends/cache'
-        log_path: str = '.erep-friends/log'
-        bkup_path: str = '.erep-friends/bkup'
-        arcv_path: str = '.erep-friends/arcv'
+        lcl_path: str = '.efriends'
+        db_path: str = '.efriends/db'
+        cache_path: str = '.efriends/cache'
+        log_path: str = '.efriends/log'
+        bkup_path: str = '.efriends/bkup'
+        arcv_path: str = '.efriends/arcv'
         db_name: str = 'efriends.db'
         log_name: str = 'efriends.log'
 

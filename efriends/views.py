@@ -2,7 +2,7 @@
 #!/usr/bin/python3  # noqa: E265
 
 """
-Manage erep-friends front end.
+Manage efriends front end.
 
 Module:    views.py
 Class:     Views/0  inherits object
@@ -17,9 +17,9 @@ import requests
 import webview
 from PIL import Image, ImageTk
 
-from controls import Controls
-from texts import Texts
-from utils import Utils
+from efriends.controls import Controls
+from efriends.texts import Texts
+from efriends.utils import Utils
 
 TX = Texts()
 CN = Controls()
@@ -27,7 +27,7 @@ UT = Utils()
 
 
 class Views(object):
-    """Manage Tkinter GUI widgets for erep-friends app."""
+    """Manage Tkinter GUI widgets for efriends app."""
 
     def __init__(self):
         """Initialize the Views object.
@@ -346,9 +346,12 @@ class Views(object):
                                state=tk.NORMAL)
                 self.citz_by_id_btn.grid(row=2, column=3, sticky=tk.W, padx=5)
 
-            def set_ctzn_by_nm_input():
-                """Refresh one citizen by Name."""
-                usrd, _ = CN.get_user_db_record()
+            def set_ctzn_by_nm_input(usrd):
+                """Refresh one citizen by Name.
+                
+                Args:
+                    usrd (namedtuple): "data" part of user record
+                """
                 widget_state = tk.NORMAL\
                     if usrd.user_tools_api_key not in (None, "None", "")\
                     else tk.DISABLED
@@ -398,13 +401,14 @@ class Views(object):
 
             set_friends_list_input()
             set_ctzn_by_id_input()
-            set_ctzn_by_nm_input()
+            usrd, _ = CN.get_user_db_record()
+            if usrd is not None:
+                set_ctzn_by_nm_input(usrd)
             set_id_by_list_input()
             set_db_refresh_input()
 
         # make_collect_frame() MAIN:
         self.close_frame()
-        cfd, _ = CN.get_config_data()
         set_context()
         set_labels()
         set_inputs()
@@ -462,14 +466,15 @@ class Views(object):
             def set_log_level_input():
                 """Set logging level."""
                 self.log_lvl_val = tk.StringVar(self.cfg_frame)
-                if cf_dflt["log_lvl"]:
-                    self.log_lvl_val.set(cf_dflt["log_lvl"])
-                else:
-                    self.log_lvl_val.set('INFO')
+                # Store current log level in a config file
+                # if cf_dflt["log_lvl"]:
+                #    self.log_lvl_val.set(cf_dflt["log_lvl"])
+                # else
+                self.log_lvl_val.set('INFO')
                 self.log_level = tk.OptionMenu(self.cfg_frame,
                                                self.log_lvl_val,
                                                *self.ST.LogLevel.keys())
-                self.log_level.grid(row=2, column=1, sticky=tk.W, padx=5)
+                self.log_level.grid(row=1, column=1, sticky=tk.W, padx=5)
                 self.log_save_btn =\
                     ttk.Button(self.cfg_frame,
                                text=TX.button.b_save_log_cfg,
@@ -585,10 +590,7 @@ class Views(object):
         self.win_root.config(menu=self.menu_bar)
 
     def set_basic_interface(self):
-        """Construct GUI widgets for erep-friends app.
-
-        Add more options later. This is enough to get through configuration.
-        """
+        """Construct GUI widgets for efriends app."""
         # Initial set of Window widgets
         self.win_root = tk.Tk()     # root app window
         self.win_root.title(TX.title.t_app)

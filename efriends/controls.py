@@ -2,7 +2,7 @@
 #!/usr/bin/python3  # noqa: E265
 
 """
-Manage erep-friends app business rules.
+Manage efriends app business rules.
 
 Module:    controls.py
 Class:     Controls/0  inherits object
@@ -13,26 +13,27 @@ import sys
 import time
 from collections import namedtuple
 from copy import copy
-from os import mkdir, path
+from os import path
 from pathlib import Path
 from pprint import pprint as pp  # noqa: F401
 
 import requests
 
-from dbase import Dbase
-from logger import Logger
-from structs import Structs
-from texts import Texts
-from utils import Utils
+from efriends.dbase import Dbase
+from efriends.logger import Logger
+from efriends.structs import Structs
+from efriends.texts import Texts
+from efriends.utils import Utils
 
 UT = Utils()
 TX = Texts()
 ST = Structs()
 DB = Dbase(ST)
+UT = Utils()
 
 
 class Controls(object):
-    """Rules engine for erep-friends."""
+    """Rules engine for efriends."""
 
     def __init__(self):
         """Initialize Controls object."""
@@ -76,11 +77,11 @@ class Controls(object):
         HOME = UT.get_home()
         app_path = path.join(HOME, TX.dbs.lcl_path)
         if not Path(app_path).exists():
-            mkdir(app_path, 0755)
+            UT.exec_bash(["mkdir {}".format(app_path)])
             for f_path in (TX.dbs.db_path, TX.dbs.cache_path, TX.dbs.log_path,
-                           TX.dbs.bkup_path, TX.dbs.arcv_path)
+                           TX.dbs.bkup_path, TX.dbs.arcv_path):
                 mk_path = path.join(HOME, f_path)
-                mkdir(mk_path, 0755)
+                UT.exec_bash(["mkdir {}".format(mk_path)])
         DB.create_main_db()
         return ST
 
@@ -127,15 +128,17 @@ class Controls(object):
             DB.query_citizen_by_name(p_citzn_nm))
 
     def enable_logging(self,
-                       p_log_level: str = 'INFO',
+                       p_log_level: str,
                        p_log_path: str):
         """Assign log file location. Instantiate Logger object.
 
         Args:
-            p_log_level (str): valid logging level key. Default = 'INFO'.
+            p_log_level (str): valid logging level key.
             p_log_path (str): full path to log file location
         """
         self.logme = False
+        if p_log_level not in ST.LogLevel.keys():
+            p_log_level = 'INFO'
         log_level = getattr(ST.LogLevel, p_log_level)
         if (log_level != ST.LogLevel.NOTSET):
             self.logme = True

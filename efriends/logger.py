@@ -14,9 +14,9 @@ from pprint import pprint as pp  # noqa: F401
 
 from tzlocal import get_localzone
 
-from structs import Structs
-from texts import Texts
-from utils import Utils
+from efriends.structs import Structs
+from efriends.texts import Texts
+from efriends.utils import Utils
 
 UT = Utils()
 TX = Texts()

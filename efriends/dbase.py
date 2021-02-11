@@ -33,9 +33,9 @@ from pathlib import Path
 from pprint import pprint as pp  # noqa: F401
 from typing import Literal
 
-from cipher import Cipher
-from texts import Texts
-from utils import Utils
+from efriends.cipher import Cipher
+from efriends.texts import Texts
+from efriends.utils import Utils
 
 UT = Utils()
 TX = Texts()
@@ -414,7 +414,8 @@ class Dbase(object):
             p_oid (string): if updating a record, used to delete previous
             p_encrypt_key (string): if adding or updating a user record
         """
-        self.connect_dmain(self.ST.ConfigFields.main_db)
+        main_db = path.join(UT.get_home(), TX.dbs.db_path, TX.dbs.db_name)
+        self.connect_dmain(main_db)
         cur = self.dmain_conn.cursor()
         if p_encrypt_key:
             try:
@@ -584,7 +585,8 @@ class Dbase(object):
             list of dicts like that ^  or
             None if no rows found
         """
-        self.connect_dmain(self.ST.ConfigFields.main_db)
+        main_db = path.join(UT.get_home(), TX.dbs.db_path, TX.dbs.db_name)
+        self.connect_dmain(main_db)
         cur = self.dmain_conn.cursor()
         result = cur.execute(p_sql).fetchall()
         self.disconnect_dmain()
@@ -614,7 +616,7 @@ class Dbase(object):
         Return latest non-deleted record that matches on PID.
 
         Args:
-            p_oid (str): erep-friends DB unique object ID
+            p_oid (str): efriends DB unique object ID
             p_single (bool): If True, return only latest row
 
         Returns:
