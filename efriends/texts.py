@@ -124,6 +124,7 @@ class Texts(object):
         n_friends_pulled: str =\
             "Number of friend profile IDs retrieved: "
         n_finito: str = "*** Done ***"
+        n_files_exported: str = "Files exported to [cache]"
 
     @dataclass
     class dbs:
@@ -190,3 +191,5 @@ class Texts(object):
         f_apikey_failed: str = "Verification of eRep Tools API key failed. "
         f_profile_id_failed: str = "Invalid eRepublik Profile ID: "
         f_upsert_failed: str = "Cannot upsert. Record not found or OID not matched."
+        f_no_go: str = "Cannot complete request."
+        f_no_format: str = "Choose at least one export format."

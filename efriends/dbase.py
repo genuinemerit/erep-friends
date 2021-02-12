@@ -699,24 +699,23 @@ class Dbase(object):
         return id_list
 
     def query_citizen_sql(self, sql_file_name: str) -> list:
-        """Run SQL read in from a file."""
+        """Run SQL read in from a file.
+
+        Returns:
+            list of tuples. First tuple contains headers, the rest values.
+        """
         sql_file = path.join(UT.get_home(), TX.dbs.db_path, sql_file_name)
-
-        pp(("sql_file: ", sql_file))
-
         with open(sql_file) as sqf:
             sql = sqf.read()
         sqf.close()
-
-        # DEBUG...
-        # return(sql)
-
         main_db = path.join(UT.get_home(), TX.dbs.db_path, TX.dbs.db_name)
         self.connect_dmain(main_db)
         cur = self.dmain_conn.cursor()
         result = cur.execute(sql).fetchall()
+        # Much nicer than the formatting I was doing earlier!
+        headers = [meta_h[0] for meta_h in cur.description]
         self.disconnect_dmain()
-
+        result.insert(0, tuple(headers))
         return(result)
 
 

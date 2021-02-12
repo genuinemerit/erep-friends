@@ -10,6 +10,7 @@ Author:    PQ <pq_rfw @ pm.me>
 """
 import tkinter as tk
 from dataclasses import dataclass
+from os import path
 from pprint import pprint as pp  # noqa: F401
 from tkinter import filedialog, messagebox, ttk
 
@@ -283,26 +284,24 @@ class Views(object):
 
     def run_visualization(self):
         """Execute processes to run, display results for selected query."""
-
-        pp(("run_visualization..qry_nm:", self.qry_nm))
-        pp(("self.foutypes", self.foutypes))
-        pp(("self.chx", self.chx))
-
         file_types = list()
         for fty in self.foutypes:
-
             on_off = self.chx[fty].get()
-            pp(("fty:", fty, "on_off (1): ", on_off))
-
-            # on_off = int(self.chx[fty])
-            # pp(("fty:", fty, "on_off (1): ", on_off))
-
             if on_off == 1:
                 file_types.append(fty)
-
-        pp(("file_types", file_types))
-
-        CN.run_citizen_viz(self.qry_nm, file_types)
+        if file_types:
+            results = CN.run_citizen_viz(self.qry_nm, file_types)
+            file_path = path.join(UT.get_home(), TX.dbs.cache_path) + "/"
+            msg = TX.msg.n_files_exported
+            msg = msg.replace("[cache]", file_path)
+            detail = ""
+            for _, val in results.items():
+                detail += "{}\n".format(val.replace(file_path, ""))
+            msg, detail = self.update_msg("", "", msg, detail)
+        else:
+            msg, detail = self.update_msg("", "", TX.shit.f_no_go,
+                                          TX.shit.f_no_format)
+        self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
     # Constructors
 
