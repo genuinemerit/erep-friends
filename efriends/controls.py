@@ -19,11 +19,11 @@ from pprint import pprint as pp  # noqa: F401
 
 import requests
 
-from efriends.dbase import Dbase
-from efriends.logger import Logger
-from efriends.structs import Structs
-from efriends.texts import Texts
-from efriends.utils import Utils
+from dbase import Dbase
+from logger import Logger
+from structs import Structs
+from texts import Texts
+from utils import Utils
 
 UT = Utils()
 TX = Texts()
@@ -128,26 +128,29 @@ class Controls(object):
             DB.query_citizen_by_name(p_citzn_nm))
 
     def enable_logging(self,
-                       p_log_level: str,
-                       p_log_path: str):
+                       p_log_level: str = 'INFO'):
         """Assign log file location. Instantiate Logger object.
 
         Args:
-            p_log_level (str): valid logging level key.
-            p_log_path (str): full path to log file location
+            p_log_level (str): valid logging level key. Default=INFO.
         """
-        self.logme = False
-        if p_log_level not in ST.LogLevel.keys():
-            p_log_level = 'INFO'
-        log_level = getattr(ST.LogLevel, p_log_level)
-        if (log_level != ST.LogLevel.NOTSET):
-            self.logme = True
-            self.LOG = Logger(p_log_path, log_level)
-            self.LOG.set_log()
-            msg = TX.logm.ll_log_loc + p_log_path
-            self.LOG.write_log(ST.LogLevel.INFO, msg)
-            msg = TX.logm.ll_log_lvl + p_log_level
-            self.LOG.write_log(ST.LogLevel.INFO, msg)
+        if not self.logme:
+            if p_log_level is None or p_log_level not in ST.LogLevel.keys():
+                p_log_level = 'INFO'
+            log_level = getattr(ST.LogLevel, p_log_level)
+            if (log_level != ST.LogLevel.NOTSET):
+                log_path = path.join(UT.get_home(), TX.dbs.log_path)
+                if not Path(log_path).exists():
+                    msg = "{}{}".format(TX.shit.f_bad_log_path, log_path)
+                    raise Exception(IOError, msg)
+                log_full_path = path.join(log_path, TX.dbs.log_name)
+                self.logme = True
+                self.LOG = Logger(log_full_path, log_level)
+                self.LOG.set_log()
+                msg = TX.logm.ll_log_loc + log_full_path
+                self.LOG.write_log(ST.LogLevel.INFO, msg)
+                msg = TX.logm.ll_log_lvl + p_log_level
+                self.LOG.write_log(ST.LogLevel.INFO, msg)
 
     def create_log(self,
                    p_log_level: str = 'INFO') -> bool:
@@ -160,15 +163,11 @@ class Controls(object):
             bool: True if logging successfully turned on, else False
         """
         self.logme = False
-        log_path = path.join(UT.get_home(), TX.dbs.log_path)
-        if not Path(log_path).exists():
-            msg = "{}{}".format(TX.shit.f_bad_log_path, log_path)
-            raise Exception(IOError, msg)
         if p_log_level not in ST.LogLevel.keys():
             msg = TX.shit.f_log_lvl_req + str(ST.LogLevel.keys)
             raise Exception(ValueError, msg)
-        log_full_path = path.join(log_path, TX.dbs.log_name)
-        self.enable_logging(p_log_level, log_full_path)
+
+        self.enable_logging(p_log_level)
         return self.logme
 
     def create_bkupdb(self):
@@ -336,8 +335,9 @@ class Controls(object):
 
     def close_controls(self):
         """Close connections. Close the log."""
-        if self.erep_csrf_token is not None:
-            self.logout_erep()
+        # This is causing a connection problem for some reason...
+        # if self.erep_csrf_token is not None:
+        #     self.logout_erep()
         try:
             self.LOG.close_logs()
         except Exception:
@@ -652,9 +652,9 @@ class Controls(object):
                                            headers=msg_headers,
                                            allow_redirects=False)
         if self.logme:
-            msg = ll_friends_cd + str(msg_response.status_code)
+            msg = TX.logm.ll_friends_cd + str(msg_response.status_code)
             self.LOG.write_log(ST.LogLevel.INFO, msg)
-        cache_file = path.join(UT.get_home(), TX.dbs.cache_file,
+        cache_file = path.join(UT.get_home(), TX.dbs.cache_path,
                                "friends_response")
         with open(cache_file, "w") as f:
             f.write(msg_response.text)
@@ -835,3 +835,20 @@ class Controls(object):
         print(TX.msg.n_finito)
         msg = TX.msg.n_friends_pulled + str(count_hits)
         return msg
+
+    def run_citizen_viz(self,
+                        p_qry_nm: str,
+                        p_file_types: list):
+        """Execute database query, format and deliver results
+
+        Args:
+            p_qry_nm (str): ID of SQL query, like "q0100"
+            p_file_types (list): one or more output file formats
+        """
+        sql_files = {
+            "q0100": "q_0100_country_party_count.sql"
+        }
+        result = DB.query_citizen_sql(sql_files[p_qry_nm])
+
+        # DEBUG
+        pp(("filetypes: ", p_file_types, "result: ", result))

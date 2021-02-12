@@ -33,9 +33,9 @@ from pathlib import Path
 from pprint import pprint as pp  # noqa: F401
 from typing import Literal
 
-from efriends.cipher import Cipher
-from efriends.texts import Texts
-from efriends.utils import Utils
+from cipher import Cipher
+from texts import Texts
+from utils import Utils
 
 UT = Utils()
 TX = Texts()
@@ -194,7 +194,7 @@ class Dbase(object):
         self.disconnect_dbkup()
 
     def archive_db(self):
-        """Make full backup of main database witha timestamp.
+        """Make full backup of main database with a timestamp.
 
         Distinct from regular backup file. A time-stamped, one-time copy.
         Make a point-in-time copy, e.g., prior to doing a purge.
@@ -497,6 +497,9 @@ class Dbase(object):
           mirrors a Struct DB schema dataclass. Put those in a list.
           Ignore row if it has all None values.
 
+        This formatter assumes no derived columns. Use it only for
+         "straight" queries against the database.
+
         Args:
             p_tbl_nm (Types.tblnames -> str): user, citizen
             p_result (sqlite result set -> list): list of tuples
@@ -545,6 +548,8 @@ class Dbase(object):
                          p_tbl_nm: Types.tblnames,
                          p_single: bool = True):
         """Format a SELECT query, with option to return only latest row.
+
+        Returns all cols from selected table.
 
         Args:
             p_tbl_nm (Types.tblnames -> str)
@@ -692,6 +697,28 @@ class Dbase(object):
         for row in recs:
             id_list.append(row['data']['profile_id'])
         return id_list
+
+    def query_citizen_sql(self, sql_file_name: str) -> list:
+        """Run SQL read in from a file."""
+        sql_file = path.join(UT.get_home(), TX.dbs.db_path, sql_file_name)
+
+        pp(("sql_file: ", sql_file))
+
+        with open(sql_file) as sqf:
+            sql = sqf.read()
+        sqf.close()
+
+        # DEBUG...
+        # return(sql)
+
+        main_db = path.join(UT.get_home(), TX.dbs.db_path, TX.dbs.db_name)
+        self.connect_dmain(main_db)
+        cur = self.dmain_conn.cursor()
+        result = cur.execute(sql).fetchall()
+        self.disconnect_dmain()
+
+        return(result)
+
 
     # ================  untested code =========================
     def destroy_all_dbs(self, db_path: str):

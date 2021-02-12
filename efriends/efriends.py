@@ -8,8 +8,7 @@ Module:    efriends.py
 Author:    PQ <pq_rfw @ pm.me>
 """
 
-from efriends.views import Views
-
+from views import Views
 
 
 # ======================

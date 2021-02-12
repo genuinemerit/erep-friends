@@ -1,21 +1,10 @@
-# coding: utf-8     # noqa: E902
-#!/usr/bin/python3  # noqa: E265
+#!/usr/bin/bash
 
-"""
-Launch efriends application.
+# Edit this file as needed to identify location of efreinds directory.
+# Then copy it to /usr/local/bin.
 
-Module:    efriends.py
-Author:    PQ <pq_rfw @ pm.me>
-"""
+APPDIR=${HOME}/Dropbox/projects
+EFDIR=erep-friends/efriends
+RUNAPP=${APPDIR}/${EFDIR}/efriends.py
 
-from efriends.views import Views
-
-
-
-# ======================
-# Main
-# ======================
-
-if __name__ == "__main__":
-    EF = Views()
-    EF.win_root.mainloop()
+python3 ${RUNAPP}

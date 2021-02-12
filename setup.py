@@ -5,6 +5,7 @@ erep-friends
 To build an efriends distribution package:
 - `cd` to /dir/where/setup.py/resides
 - `python3 ./setup.py sdist bdist_wheel`
+
 To install this as a package:
 `sudo -H python3 -m pip install -e /dir/where/setup.py/resides`
 like...
@@ -15,6 +16,18 @@ Then, to make the program easily executable from command line:
 copy the following files to /usr/local/bin:
 ~/erep-friends/efriends/efriends
 ~/erep-friends/efriends/efriends.py
+
+Having problems making this work, actually.
+I could import the package sometimes, not all the time. Kinda weird.
+Obviously I need to understand better how to package and distribute an app.
+
+Also, on my system (native Ubuntu 20 on a Dell laptop),
+  packages installed with "-e" cannot be uninstalled cleanly using pip uninstall.
+Instead:
+- Delete the egg file, then
+- Edit the /usr/local/lib/python3.8/dist-packages/easy-install.pth file and
+  remove the package from there too.
+
 """
 # IMPORTS
 from setuptools import setup, find_packages

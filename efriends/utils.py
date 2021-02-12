@@ -17,7 +17,7 @@ from pprint import pprint as pp  # noqa: F401
 
 import arrow
 
-from efriends.structs import Structs
+from structs import Structs
 
 ST = Structs()
 

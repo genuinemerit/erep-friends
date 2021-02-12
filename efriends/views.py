@@ -16,10 +16,11 @@ from tkinter import filedialog, messagebox, ttk
 import requests
 import webview
 from PIL import Image, ImageTk
+from typing import Literal
 
-from efriends.controls import Controls
-from efriends.texts import Texts
-from efriends.utils import Utils
+from controls import Controls
+from texts import Texts
+from utils import Utils
 
 TX = Texts()
 CN = Controls()
@@ -34,6 +35,7 @@ class Views(object):
 
         Configure and start up the app.
         """
+        self.foutypes = ["json", "csv", "html", "pdf", "df"]
         CN.check_python_version()
         CN.set_erep_headers()
         self.ST = CN.configure_database()
@@ -107,8 +109,12 @@ class Views(object):
         elif self.buffer.current_frame == "collect":
             self.collect_frame.grid_forget()
             self.collect_frame.destroy()
+        elif self.buffer.current_frame == "viz":
+            self.viz_frame.grid_forget()
+            self.viz_frame.destroy()
         self.set_menu_item(TX.menu.m_win, TX.menu.i_cfg, "enable")
         self.set_menu_item(TX.menu.m_win, TX.menu.i_coll, "enable")
+        self.set_menu_item(TX.menu.m_win, TX.menu.i_viz, "enable")
         self.set_menu_item(TX.menu.m_file, TX.menu.i_close, "disable")
         setattr(self.buffer, 'current_frame', None)
         self.win_root.title(TX.title.t_app)
@@ -144,7 +150,7 @@ class Views(object):
         usrd, _ = CN.get_user_db_record()
         if usrd is None:
             return False
-        CN.enable_logging()
+        CN.enable_logging() # Default to INFO
         self.set_menu_item(TX.menu.m_win, TX.menu.i_coll, "enable")
         self.make_user_image()
         return True
@@ -275,7 +281,106 @@ class Views(object):
         msg, detail = self.update_msg("", "", msg, detail)
         self.make_message(self.ST.MsgLevel.INFO, msg, detail)
 
+    def run_visualization(self):
+        """Execute processes to run, display results for selected query."""
+
+        pp(("run_visualization..qry_nm:", self.qry_nm))
+        pp(("self.foutypes", self.foutypes))
+        pp(("self.chx", self.chx))
+
+        file_types = list()
+        for fty in self.foutypes:
+
+            on_off = self.chx[fty].get()
+            pp(("fty:", fty, "on_off (1): ", on_off))
+
+            # on_off = int(self.chx[fty])
+            # pp(("fty:", fty, "on_off (1): ", on_off))
+
+            if on_off == 1:
+                file_types.append(fty)
+
+        pp(("file_types", file_types))
+
+        CN.run_citizen_viz(self.qry_nm, file_types)
+
     # Constructors
+
+    def make_viz_frame(self):
+        """Construct frame for reporting, visualizing citizen data."""
+        def set_context():
+            """Adjust menus, set frame."""
+            setattr(self.buffer, 'current_frame', 'viz')
+            self.win_root.title(TX.title.t_viz)
+            self.set_menu_item(TX.menu.m_file, TX.menu.i_close, "enable")
+            self.set_menu_item(TX.menu.m_win, TX.menu.i_cfg, "enable")
+            self.set_menu_item(TX.menu.m_win, TX.menu.i_coll, "enable")
+            self.set_menu_item(TX.menu.m_win, TX.menu.i_viz, "disable")
+            self.viz_frame = tk.Frame(self.win_root,
+                                      width=400, padx=5, pady=5)
+            self.viz_frame.grid(sticky=tk.N)
+            self.win_root.grid_rowconfigure(1, weight=1)
+            self.win_root.grid_columnconfigure(1, weight=1)
+
+        def set_labels():
+            """Define widget labels for visualization frame."""
+            set_viz_q0100_label =\
+                ttk.Label(self.viz_frame,
+                          text=TX.query.q_100)
+            set_viz_q0100_label.grid(row=1, column=0,
+                                     sticky=tk.E, padx=5)
+
+        def set_inputs():
+            """Define input widgets for visualization frame."""
+
+            def set_file_chx(p_chx_ty: str,
+                             p_row: int, p_col: int):
+                """Show output options: JSON, CSV, HTML, PDF, DataFrame.
+
+                Args:
+                    p_chx_ty (str): json, csv, etc..
+                    p_row (int): row of frame to display checkbox
+                    p_col (int): col of frame to display checkbox
+                """
+                if p_chx_ty in self.foutypes:
+                    chx_nm = TX.button.c_json if p_chx_ty == "json"\
+                        else TX.button.c_csv if p_chx_ty == "csv"\
+                        else TX.button.c_html if p_chx_ty == "html"\
+                        else TX.button.c_pdf if p_chx_ty == "pdf"\
+                        else TX.button.c_dataframe if p_chx_ty == "df"\
+                        else None
+                    if chx_nm is not None:
+                        self.chx[p_chx_ty] = tk.IntVar(value=0)
+                        file_chx =\
+                            ttk.Checkbutton(self.viz_frame,
+                                            text=chx_nm,
+                                            variable=self.chx[p_chx_ty],
+                                            onvalue=1, offvalue=0)
+                        file_chx.grid(row=p_row, column=p_col,
+                                      sticky=tk.E, padx=5)
+
+            def set_q0100_input():
+                """Collect / refresh friends data."""
+                # Add output options: JSON, CSV, HTML, DataFrame
+                self.qry_nm = "q0100"
+                self.q0100_btn =\
+                    ttk.Button(self.viz_frame,
+                               text=TX.button.b_run_query,
+                               command=self.run_visualization,
+                               state=tk.NORMAL)
+                self.q0100_btn.grid(row=1, column=1, sticky=tk.W, padx=5)
+                for fky, fty in enumerate(self.foutypes):
+                    set_file_chx(fty, 1, fky + 2)
+
+            set_q0100_input()
+
+        # make_viz_frame() MAIN:
+        self.close_frame()
+        self.qry_nm = None
+        self.chx = dict()
+        set_context()
+        set_labels()
+        set_inputs()
 
     def make_collect_frame(self):
         """Construct frame for collecting profile IDs and citizen data."""
@@ -348,7 +453,7 @@ class Views(object):
 
             def set_ctzn_by_nm_input(usrd):
                 """Refresh one citizen by Name.
-                
+
                 Args:
                     usrd (namedtuple): "data" part of user record
                 """
@@ -578,6 +683,8 @@ class Views(object):
                                   command=self.make_config_frame)
         self.win_menu.add_command(label=TX.menu.i_coll,
                                   command=self.make_collect_frame)
+        self.win_menu.add_command(label=TX.menu.i_viz,
+                                  command=self.make_viz_frame)
 
         self.help_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label=TX.menu.m_help,

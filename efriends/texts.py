@@ -25,6 +25,7 @@ class Texts(object):
         t_app: str = 'Analyze eRepublik Citizens Data'
         t_cfg: str = 'Configure efriends'
         t_coll: str = 'Collect Citizen Data'
+        t_viz: str = 'Visualize Citizen Data'
         t_info: str = "Information"
         t_warn: str = "Warning"
         t_error: str = "Error"
@@ -45,6 +46,7 @@ class Texts(object):
         i_quit: str = 'Exit'
         i_cfg: str = 'Configure efriends'
         i_coll: str = 'Collect Citizen Data'
+        i_viz: str = 'Visualize Citizen Data'
         i_docs: str = 'User Guide'
         i_about: str = 'About'
 
@@ -79,7 +81,13 @@ class Texts(object):
         b_save_bkup_cfg: str = "Save backup location"
         b_save_creds: str = "Verify and save eRep login"
         b_save_apikey: str = "Verify and save API key"
+        b_run_query: str = "Run DB query"
         c_is_friend: str = "Is a friend"
+        c_json: str = "JSON"
+        c_csv: str = "CSV"
+        c_html: str = "HTML"
+        c_pdf: str = "PDF"
+        c_dataframe: str = "DataFrame"
 
     @dataclass
     class msg:
@@ -128,6 +136,11 @@ class Texts(object):
         arcv_path: str = '.efriends/arcv'
         db_name: str = 'efriends.db'
         log_name: str = 'efriends.log'
+
+    @dataclass
+    class query:
+        """Database SQL query labels."""
+        q_100: str = 'Count by Country, Party:'
 
     @dataclass
     class urls:
