@@ -17,14 +17,17 @@ from tkinter import filedialog, messagebox, ttk
 import requests
 import webview
 from PIL import Image, ImageTk
-from typing import Literal
 
 from controls import Controls
+from reports import Reports
+from structs import Structs
 from texts import Texts
 from utils import Utils
 
-TX = Texts()
 CN = Controls()
+RP = Reports()
+ST = Structs()
+TX = Texts()
 UT = Utils()
 
 
@@ -39,12 +42,13 @@ class Views(object):
         self.foutypes = ["json", "csv", "html", "pdf", "df"]
         CN.check_python_version()
         CN.set_erep_headers()
-        self.ST = CN.configure_database()
+        CN.configure_database()
         CN.create_log('INFO')
         CN.create_bkupdb()
         self.set_basic_interface()
         if not self.check_user():
             self.set_menu_item(TX.menu.m_win, TX.menu.i_coll, "disable")
+            self.set_menu_item(TX.menu.m_win, TX.menu.i_viz, "disable")
             self.make_config_frame()
 
     @dataclass
@@ -69,31 +73,15 @@ class Views(object):
             else "disabled"
         if p_menu == TX.menu.m_file:
             if p_item == TX.menu.i_close:
+                # First integer refers to item's order in menu
                 self.file_menu.entryconfig(0, state=w_state)
         elif p_menu == TX.menu.m_win:
             if p_item == TX.menu.i_cfg:
                 self.win_menu.entryconfig(0, state=w_state)
             if p_item == TX.menu.i_coll:
                 self.win_menu.entryconfig(1, state=w_state)
-
-    def update_msg(self,
-                   msg: str = "",
-                   detail: str = "",
-                   mm: str = "",
-                   dd: str = "") -> tuple:
-        """Format result messages.
-
-        Args:
-            msg (str): previous msgs
-            detail (str): previous detail
-            mm (str): short message to add
-            dd (str): detailed message to add
-        Returns:
-            tuple: (str: msg, str: detail)
-        """
-        msg = msg + "\n" + mm if mm else msg
-        detail = detail + "\n" + dd if dd else detail
-        return(msg, detail)
+            if p_item == TX.menu.i_viz:
+                self.win_menu.entryconfig(2, state=w_state)
 
     # Event handlers
 
@@ -137,10 +125,8 @@ class Views(object):
         log_level = str(self.log_lvl_val.get()).strip()
         ok = CN.create_log(log_level)
         if ok:
-            msg, detail = self.update_msg("", "",
-                                          TX.msg.n_log_cfg,
-                                          TX.msg.n_logging_on)
-            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
+            self.show_message(ST.MsgLevel.INFO,
+                              TX.msg.n_log_cfg, TX.msg.n_logging_on)
 
     def check_user(self) -> bool:
         """See if user record already exists.
@@ -169,8 +155,8 @@ class Views(object):
             CN.write_ctzn_rec(citzn_rec)
             detail = TX.msg.n_connected + "\n" + TX.msg.n_user_cfg + "\n"
             detail += TX.msg.n_greet.replace("[user]", id_info.user_name)
-            msg, detail = self.update_msg("", "", TX.msg.n_user_on, detail)
-            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
+            self.show_message(ST.MsgLevel.INFO,
+                              TX.msg.n_user_on, detail)
             self.check_user()
 
     def save_apikey_config(self):
@@ -178,6 +164,7 @@ class Views(object):
         erep_apikey = str(self.apikey.get()).strip()
         if erep_apikey:
             usrd, _ = CN.get_user_db_record()
+            msglvl = ST.MsgLevel.INFO
             if usrd is not None:
                 if CN.verify_api_key(usrd.user_erep_profile_id, erep_apikey):
                     detail = TX.msg.n_user_key_on
@@ -186,20 +173,18 @@ class Views(object):
                                       usrd.user_erep_password,
                                       erep_apikey)
                 else:
-                    detail = TX.msg.n_user_key_fail
+                    detail = TX.shit.f_user_key_fail
+                    msglvl = ST.MsgLevel.ERROR
             else:
-                detail = TX.msg.n_user_key_fail
-            msg, detail = self.update_msg("", "",
-                                          TX.msg.n_user_key_test, detail)
-            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
+                detail = TX.shit.f_user_key_fail
+                msglvl = ST.MsgLevel.ERROR
+            self.show_message(msglvl, TX.msg.n_user_key_test, detail)
 
     def collect_friends(self):
         """Login to and logout of erep using user credentials."""
         usrd, _ = CN.get_user_db_record()
         detail = CN.get_erep_friends_data(usrd.user_erep_profile_id)
-        msg, detail = self.update_msg("", "",
-                                      TX.msg.n_got_friends, detail)
-        self.make_message(self.ST.MsgLevel.INFO, msg, detail)
+        self.show_message(ST.MsgLevel.INFO, TX.msg.n_got_friends, detail)
 
     def get_citizen_by_id(self):
         """Get user profile data from eRepublik."""
@@ -220,8 +205,7 @@ class Views(object):
             call_ok = CN.get_erep_citizen_by_id(citizen_id,
                                                 False, is_friend)
             if call_ok:
-                msg, detail = self.update_msg("", "", msg, detail)
-                self.make_message(self.ST.MsgLevel.INFO, msg, detail)
+                self.show_message(ST.MsgLevel.INFO, msg, detail)
 
     def get_citizen_by_name(self):
         """Look up Citizen profile by Name."""
@@ -235,6 +219,7 @@ class Views(object):
         else:
             citizen_nm = str(self.citz_bynm.get()).strip()
             if citizen_nm:
+                msglvl = ST.MsgLevel.INFO
                 ctzn_d, _ = CN.get_citizen_db_rec_by_nm(citizen_nm)
                 if ctzn_d is not None:
                     msg = TX.msg.n_citzn_on_db
@@ -247,9 +232,12 @@ class Views(object):
                     ok, detail =\
                         CN.get_erep_citizen_by_nm(apikey, citizen_nm,
                                                 False, is_friend)
-                    msg = TX.msg.n_new_citzn if ok else TX.msg.n_problem
-                self.update_msg("", "", msg, detail)
-                self.make_message(self.ST.MsgLevel.INFO, msg, detail)
+                    if ok:
+                        msg = TX.msg.n_new_citzn
+                    else:
+                        msg = TX.msg.n_problem
+                        msglvl = ST.MsgLevel.WARN
+                self.show_message(msglvl, msg, detail)
 
     def select_profile_ids_file(self):
         """Select a file containing list of profile IDs."""
@@ -270,17 +258,20 @@ class Views(object):
         if id_file_path not in (None, "None", ""):
             call_ok, detail =\
                 CN.refresh_citizen_data_from_file(id_file_path)
-            msg, detail = self.update_msg("", "", TX.msg.n_id_file_on,
-                                          detail)
-            self.make_message(self.ST.MsgLevel.INFO, msg, detail)
+            self.show_message(ST.MsgLevel.INFO,
+                              TX.msg.n_id_file_on, detail)
 
     def refresh_ctizns_from_db(self):
         """Refresh citizen data based on active profile IDs on DB."""
         msg = None
+        msglvl = ST.MsgLevel.INFO
         ok, detail = CN.refresh_ctzn_data_from_db()
-        msg = TX.msg.n_id_data_on if ok else TX.msg.n_problem
-        msg, detail = self.update_msg("", "", msg, detail)
-        self.make_message(self.ST.MsgLevel.INFO, msg, detail)
+        if ok:
+            msg = TX.msg.n_id_data_on
+        else:
+            msg = TX.msg.n_problem
+            msglvl = ST.MsgLevel.WARN
+        self.show_message(msglvl, msg, detail)
 
     def run_visualization(self):
         """Execute processes to run, display results for selected query."""
@@ -289,19 +280,20 @@ class Views(object):
             on_off = self.chx[fty].get()
             if on_off == 1:
                 file_types.append(fty)
+        msglvl = ST.MsgLevel.INFO
         if file_types:
-            results = CN.run_citizen_viz(self.qry_nm, file_types)
+            results = RP.run_citizen_viz(self.qry_nm, file_types)
             file_path = path.join(UT.get_home(), TX.dbs.cache_path) + "/"
             msg = TX.msg.n_files_exported
             msg = msg.replace("[cache]", file_path)
             detail = ""
             for _, val in results.items():
                 detail += "{}\n".format(val.replace(file_path, ""))
-            msg, detail = self.update_msg("", "", msg, detail)
         else:
-            msg, detail = self.update_msg("", "", TX.shit.f_no_go,
-                                          TX.shit.f_no_format)
-        self.make_message(self.ST.MsgLevel.INFO, msg, detail)
+            msg = TX.shit.f_no_go
+            detail = TX.shit.f_no_format
+            msglvl = ST.MsgLevel.ERROR
+        self.show_message(msglvl, msg, detail)
 
     # Constructors
 
@@ -577,7 +569,7 @@ class Views(object):
                 self.log_lvl_val.set('INFO')
                 self.log_level = tk.OptionMenu(self.cfg_frame,
                                                self.log_lvl_val,
-                                               *self.ST.LogLevel.keys())
+                                               *ST.LogLevel.keys())
                 self.log_level.grid(row=1, column=1, sticky=tk.W, padx=5)
                 self.log_save_btn =\
                     ttk.Button(self.cfg_frame,
@@ -633,7 +625,7 @@ class Views(object):
         set_labels()
         set_inputs()
 
-    def make_message(self,
+    def show_message(self,
                      p_msg_level: str,
                      p_msg: str,
                      p_detail: str):

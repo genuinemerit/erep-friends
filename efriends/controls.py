@@ -8,7 +8,6 @@ Module:    controls.py
 Class:     Controls/0  inherits object
 Author:    PQ <pq_rfw @ pm.me>
 """
-import csv
 import json
 import sys
 import time
@@ -18,7 +17,6 @@ from os import path
 from pathlib import Path
 from pprint import pprint as pp  # noqa: F401
 
-import pandas as pd
 import requests
 
 from dbase import Dbase
@@ -27,10 +25,9 @@ from structs import Structs
 from texts import Texts
 from utils import Utils
 
-UT = Utils()
-TX = Texts()
+DB = Dbase()
 ST = Structs()
-DB = Dbase(ST)
+TX = Texts()
 UT = Utils()
 
 
@@ -85,7 +82,6 @@ class Controls(object):
                 mk_path = path.join(HOME, f_path)
                 UT.exec_bash(["mkdir {}".format(mk_path)])
         DB.create_main_db()
-        return ST
 
     def convert_data_record(self,
                             p_data_rows: dict) -> tuple:
@@ -837,109 +833,3 @@ class Controls(object):
         print(TX.msg.n_finito)
         msg = TX.msg.n_friends_pulled + str(count_hits)
         return msg
-
-    def run_citizen_viz(self,
-                        p_qry_nm: str,
-                        p_file_types: list):
-        """Execute database query, format and deliver results
-
-        Will want another class for to do publish/formatting stuff.
-
-        -- Collect:
-        --   Get headers with data
-        -- Clean:
-        --   Trim spaces
-        --   Convert None to text value
-        -- Categorize:
-        --   ? time ? geography ? relationships ?
-        -- Enumerate / standardize:
-        --   Convert geo and org data to numbers
-        --   Use profile IDs rather than names
-        -- Explore/Experiment
-        --   Try various visualization styles
-        --   Try various visualization tools
-        -- Apply Algorithms
-        --   Standard distributions
-        --   Time-series, changes
-        --   Predictive models
-        -- Iterate/Review/Improve
-        --   Publish, collect feedback
-        -- Distribute, optimize
-        --   Schedule, push
-        --   Collect bug reports
-
-        Args:
-            p_qry_nm (str): ID of SQL query, like "q0100"
-            p_file_types (list): one or more output file formats
-
-        For creating PDFs, see:
-        - https://realpython.com/creating-modifying-pdf/#creating-a-pdf-file-from-scratch
-        - https://www.reportlab.com/software/opensource/rl-toolkit/
-        - https://pypi.org/project/pdfrw/#writing-pdfs
-        - https://www.adobe.com/content/dam/acom/en/devnet/acrobat/pdfs/pdf_reference_1-7.pdf
-
-        """
-        # Can probably make this a bit more dynamic, but
-        # want to be careful to avoid SQL injection attack vectors.
-        # Not a huge concern, but still... Maybe scan for DELETE,
-        # UPDATE, INSERT, DROP... or verify that there is a
-        # comment which has some kind of token?
-        sql_files = {
-            "q0100": "q0100_country_party_count.sql"
-        }
-        if p_qry_nm not in sql_files.keys():
-            return False
-        result = DB.query_citizen_sql(sql_files[p_qry_nm])
-        headers = result.pop(0)
-        file_nm = sql_files[p_qry_nm].replace(".sql", "")
-        file_path = path.join(UT.get_home(), TX.dbs.cache_path)
-        data_l = list()
-        for data_sql in result:
-            data_d = dict()
-            for cx, val in enumerate(list(data_sql)):
-                data_d[headers[cx]] = val
-            data_l.append(data_d)
-
-        return_pkg = dict()
-        if "json" in p_file_types:
-            file_full_path = path.join(file_path, file_nm + ".json")
-            return_pkg["json"] = file_full_path
-            with open(file_full_path, 'w') as jf:
-                jf.write(json.dumps(data_l))
-            jf.close()
-        if "csv" in p_file_types\
-        or "html" in p_file_types\
-        or "df" in p_file_types:
-            file_full_path = path.join(file_path, file_nm + ".csv")
-            if "csv" in p_file_types:
-                return_pkg["csv"] = file_full_path
-            with open(file_full_path, 'w') as cf:
-                writer = csv.writer(cf, delimiter=",", quotechar='"',
-                                    quoting=csv.QUOTE_MINIMAL)
-                writer.writerow(headers)
-                for data in data_l:
-                    data_row = list()
-                    for _, val in data.items():
-                        data_row.append(val)
-                    writer.writerow(data_row)
-            cf.close()
-            if "html" in p_file_types or "df" in p_file_types:
-                # This creates a dataframe:
-                data = pd.read_csv(file_full_path)
-                # Note that pandas can also write directly to a sqlite DB using...
-                # data.to_sql('table-nm', '<db-connection>', ...)
-                # See: https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.to_sql.html#pandas.DataFrame.to_sql
-                # Parquet, hdf5 and other formats also supported
-
-                if "df" in p_file_types:
-                    file_full_path = path.join(file_path, file_nm + ".pkl")
-                    return_pkg["df"] = file_full_path
-                    data.to_pickle(file_full_path)
-                if "html" in p_file_types:
-                    file_full_path = path.join(file_path, file_nm + ".html")
-                    return_pkg["html"] = file_full_path
-                    with open(file_full_path, 'w') as hf:
-                        hf.write(data.to_html())
-                    hf.close()
-        return(return_pkg)
-

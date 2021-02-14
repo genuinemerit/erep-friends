@@ -103,9 +103,7 @@ class Texts(object):
         n_key_required: str = "Function requires a valid API key."
         n_user_cfg: str = "User credentials and profile stored."
         n_user_key_on: str = "User eRep Tools API key verified."
-        n_user_key_fail: str = "User eRep Tools API key FAILED verification."
         n_connected: str = 'Login to eRepublik verified.'
-        n_login_failed: str = 'eRep login failed. Please review credentials.'
         n_got_friends: str = "Friends data collected and saved."
         n_citzn_on_db: str = "Citizen already on DB."
         n_new_citzn: str = "Citizen added to DB."
@@ -181,6 +179,7 @@ class Texts(object):
     class shit:
         """Error and warning messages."""
 
+        f_user_key_fail: str = "User eRep Tools API key FAILED verification."
         f_py3_req: str = "Python 3 is required."
         f_user_ver: str = "Your version is v~VERSION~."
         f_bad_path: str = "Path could not be reached: "

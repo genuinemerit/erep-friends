@@ -34,12 +34,14 @@ from pprint import pprint as pp  # noqa: F401
 from typing import Literal
 
 from cipher import Cipher
+from structs import Structs
 from texts import Texts
 from utils import Utils
 
 UT = Utils()
 TX = Texts()
 CI = Cipher()
+ST = Structs()
 
 
 class Dbase(object):
@@ -50,14 +52,6 @@ class Dbase(object):
     Python equivalents are:
         None, int, float, string, byte
     """
-
-    def __init__(self, ST):
-        """Initialize Dbase object.
-
-        Args:
-            ST (object): Instantiated Structs object
-        """
-        self.ST = ST
 
     class Types(object):
         """Define non-standard data types."""
@@ -140,8 +134,8 @@ class Dbase(object):
             list: of "data" dataclass column names
         """
         data_keys =\
-            self.ST.UserFields.keys() if p_tbl_nm == 'user'\
-            else self.ST.CitizenFields.keys()
+            ST.UserFields.keys() if p_tbl_nm == 'user'\
+            else ST.CitizenFields.keys()
         return data_keys
 
     def create_tables(self, p_db_path: str):
@@ -163,7 +157,7 @@ class Dbase(object):
             # Table does not exist...
             if len(result) == 0:
                 data_keys = self.get_data_keys(tbl_nm)
-                col_nms = data_keys + self.ST.AuditFields.keys()
+                col_nms = data_keys + ST.AuditFields.keys()
                 for ix, col in enumerate(col_nms):
                     if col == "encrypt_key":
                         col_nms[ix] = col + " BLOB"
@@ -319,8 +313,8 @@ class Dbase(object):
             tuple: (dict: "data":.., dict: "audit":..)
         """
         audit_rec = dict()
-        for cnm in self.ST.AuditFields.keys():
-            audit_rec[cnm] = copy(getattr(self.ST.AuditFields, cnm))
+        for cnm in ST.AuditFields.keys():
+            audit_rec[cnm] = copy(getattr(ST.AuditFields, cnm))
         audit_rec["uid"] = UT.get_uid()
         audit_rec["oid"] = UT.get_uid()
         dttm = UT.get_dttm('UTC')
@@ -363,7 +357,7 @@ class Dbase(object):
         if not aud or aud.oid != p_oid:
             msg = TX.shit.f_upsert_failed
             raise Exception(ValueError, msg)
-        audit_rec = UT.make_dict(self.ST.AuditFields.keys(), aud)
+        audit_rec = UT.make_dict(ST.AuditFields.keys(), aud)
         audit_rec["uid"] = UT.get_uid()
         audit_rec['oid'] = copy(aud.oid)
         audit_rec['create_ts'] = copy(aud.create_ts)
@@ -476,7 +470,7 @@ class Dbase(object):
         """
         user_data = copy(p_user_data)
         encrypt_key = user_data["encrypt_key"]
-        data_keys = self.ST.UserFields.keys()
+        data_keys = ST.UserFields.keys()
         data_keys.remove("encrypt_key")
         for cnm in data_keys:
             if user_data[cnm] and user_data[cnm] not in (None, "None", ""):
@@ -514,15 +508,15 @@ class Dbase(object):
             for cnm in dat_keys:
                 dat_rec[cnm] = copy(getattr(dat_dflt, cnm))
             for cnm in aud_keys:
-                aud_rec[cnm] = copy(getattr(self.ST.AuditFields, cnm))
+                aud_rec[cnm] = copy(getattr(ST.AuditFields, cnm))
             return (dat_rec, aud_rec)
 
         data_out = list()
         dat_keys = self.get_data_keys(p_tbl_nm)
-        aud_keys = self.ST.AuditFields.keys()
+        aud_keys = ST.AuditFields.keys()
         col_nms = dat_keys + aud_keys
-        dat_dflt = self.ST.UserFields if p_tbl_nm == 'user'\
-            else self.ST.CitizenFields
+        dat_dflt = ST.UserFields if p_tbl_nm == 'user'\
+            else ST.CitizenFields
         max_ix = len(col_nms) - 1
 
         for rx, in_row in enumerate(p_result):
@@ -560,9 +554,9 @@ class Dbase(object):
             list of dicts like that ^  or
             None if no rows found
         """
-        data_cols = self.ST.UserFields.keys() if p_tbl_nm == "user"\
-            else self.ST.CitizenFields.keys()
-        col_nms = data_cols + self.ST.AuditFields.keys()
+        data_cols = ST.UserFields.keys() if p_tbl_nm == "user"\
+            else ST.CitizenFields.keys()
+        col_nms = data_cols + ST.AuditFields.keys()
         col_nms_txt = ", ".join(col_nms)
         sql = "SELECT {}, ".format(col_nms_txt)
         if p_single:
@@ -627,8 +621,8 @@ class Dbase(object):
         Returns:
             dict: of (dicts keyed by "data", "audit")
         """
-        col_nms = list(self.ST.CitizenFields.keys()) +\
-            list(self.ST.AuditFields.keys())
+        col_nms = list(ST.CitizenFields.keys()) +\
+            list(ST.AuditFields.keys())
         col_nms_txt = ", ".join(col_nms)
         sql = "SELECT {}, ".format(col_nms_txt)
         if p_single:
@@ -652,8 +646,8 @@ class Dbase(object):
         Returns:
             dict: of (dicts keyed by "data", "audit")
         """
-        col_nms = list(self.ST.CitizenFields.keys()) +\
-            list(self.ST.AuditFields.keys())
+        col_nms = list(ST.CitizenFields.keys()) +\
+            list(ST.AuditFields.keys())
         col_nms_txt = ", ".join(col_nms)
         sql = "SELECT {}, ".format(col_nms_txt)
         sql += " MAX(update_ts) FROM citizen"
@@ -674,8 +668,8 @@ class Dbase(object):
         Returns:
             dict: of (dicts keyed by "data", "audit")
         """
-        col_nms = list(self.ST.CitizenFields.keys()) +\
-            list(self.ST.AuditFields.keys())
+        col_nms = list(ST.CitizenFields.keys()) +\
+            list(ST.AuditFields.keys())
         col_nms_txt = ", ".join(col_nms)
         sql = "SELECT {}, ".format(col_nms_txt)
         sql += " MAX(update_ts) FROM citizen"
