@@ -273,22 +273,34 @@ class Views(object):
             msglvl = ST.MsgLevel.WARN
         self.show_message(msglvl, msg, detail)
 
-    def run_visualization(self):
-        """Execute processes to run, display results for selected query."""
+    def run_visualization(self, p_sql_nm: str):
+        """Execute processes to run, display results for selected query.
+
+        Args:
+            p_sql_nm (str): Legit SQL id
+        """
         file_types = list()
+
+        pp(("p_sql_nm", p_sql_nm))
+        pp(("self.chx", self.chx))
+
         for fty in self.foutypes:
-            on_off = self.chx[fty].get()
+            on_off = self.chx[p_sql_nm][fty].get()
             if on_off == 1:
                 file_types.append(fty)
         msglvl = ST.MsgLevel.INFO
         if file_types:
-            results = RP.run_citizen_viz(self.qry_nm, file_types)
+            results = RP.run_citizen_viz(p_sql_nm, file_types)
             file_path = path.join(UT.get_home(), TX.dbs.cache_path) + "/"
             msg = TX.msg.n_files_exported
             msg = msg.replace("[cache]", file_path)
             detail = ""
-            for _, val in results.items():
+            for ftyp, val in results.items():
                 detail += "{}\n".format(val.replace(file_path, ""))
+                if ftyp == "html":
+                    """Display User Guide wiki page in browser window."""
+                    webview.create_window(ftyp, val)
+                    webview.start()
         else:
             msg = TX.shit.f_no_go
             detail = TX.shit.f_no_format
@@ -299,6 +311,15 @@ class Views(object):
 
     def make_viz_frame(self):
         """Construct frame for reporting, visualizing citizen data."""
+        def prep_viz_options():
+            """Pull in SQL and Plot files."""
+            self.qry = dict()
+            self.chx = dict()
+            sql_files = RP.get_sql_files()
+            for fid, fnm in sql_files.items():
+                self.qry[fid] = RP.get_query_desc(fid)
+            # self.plot = dict()
+
         def set_context():
             """Adjust menus, set frame."""
             setattr(self.buffer, 'current_frame', 'viz')
@@ -315,66 +336,61 @@ class Views(object):
 
         def set_labels():
             """Define widget labels for visualization frame."""
-            set_viz_q0100_label =\
-                ttk.Label(self.viz_frame,
-                          text=TX.query.q_100)
-            set_viz_q0100_label.grid(row=1, column=0,
-                                     sticky=tk.E, padx=5)
+            row_cnt = 0
+            for fid, desc in self.qry.items():
+                ttk.Label(self.viz_frame, text=desc).grid(
+                    row=row_cnt, column=0, sticky=tk.E, padx=5)
+                row_cnt += 1
 
         def set_inputs():
             """Define input widgets for visualization frame."""
 
-            def set_file_chx(p_chx_ty: str,
-                             p_row: int, p_col: int):
-                """Show output options: JSON, CSV, HTML, PDF, DataFrame.
+            def set_export_options(p_sql_id: str, p_chx_ty: str,
+                                   p_row: int, p_col: int):
+                """Show checkboxes: JSON, CSV, HTML, PDF, DataFrame.
 
                 Args:
+                    p_sql_id (str): Legit ID of a SQL file
                     p_chx_ty (str): json, csv, etc..
                     p_row (int): row of frame to display checkbox
                     p_col (int): col of frame to display checkbox
                 """
+                chx_txt = {"json": TX.button.c_json,
+                           "csv": TX.button.c_csv,
+                           "html": TX.button.c_html,
+                           "pdf": TX.button.c_pdf,
+                           "df": TX.button.c_dataframe}
                 if p_chx_ty in self.foutypes:
-                    chx_nm = TX.button.c_json if p_chx_ty == "json"\
-                        else TX.button.c_csv if p_chx_ty == "csv"\
-                        else TX.button.c_html if p_chx_ty == "html"\
-                        else TX.button.c_pdf if p_chx_ty == "pdf"\
-                        else TX.button.c_dataframe if p_chx_ty == "df"\
-                        else None
-                    if chx_nm is not None:
-                        self.chx[p_chx_ty] = tk.IntVar(value=0)
-                        file_chx =\
-                            ttk.Checkbutton(self.viz_frame,
-                                            text=chx_nm,
-                                            variable=self.chx[p_chx_ty],
-                                            onvalue=1, offvalue=0)
-                        file_chx.grid(row=p_row, column=p_col,
-                                      sticky=tk.E, padx=5)
-
-            def set_q0100_input():
-                """Collect / refresh friends data."""
-                # Add output options: JSON, CSV, HTML, DataFrame
-                self.qry_nm = "q0100"
-                self.q0100_btn =\
-                    ttk.Button(self.viz_frame,
-                               text=TX.button.b_run_query,
-                               command=self.run_visualization,
-                               state=tk.NORMAL)
-                self.q0100_btn.grid(row=1, column=1, sticky=tk.W, padx=5)
+                    chx_nm = chx_txt[p_chx_ty]
+                    self.chx[p_sql_id][p_chx_ty] = tk.IntVar(value=0)
+                    ttk.Checkbutton(self.viz_frame, text=chx_nm,
+                        variable=self.chx[p_sql_id][p_chx_ty],
+                        onvalue=1, offvalue=0).grid(
+                            row=p_row, column=p_col,
+                            sticky=tk.E, padx=5)
+            row_cnt = 0
+            # This is problematic. Only gets sql ID (fid) from last item built.
+            for fid, desc in self.qry.items():
+                ttk.Button(self.viz_frame,
+                            text=TX.button.b_run_query,
+                            command=lambda: self.run_visualization(fid),
+                            state=tk.NORMAL).grid(
+                                row=row_cnt, column=1, sticky=tk.W, padx=5)
+                self.chx[fid] = dict()
                 for fky, fty in enumerate(self.foutypes):
-                    set_file_chx(fty, 1, fky + 2)
-
-            set_q0100_input()
+                    set_export_options(fid, fty, row_cnt, fky + 2)
+                row_cnt += 1
 
         # make_viz_frame() MAIN:
         self.close_frame()
-        self.qry_nm = None
-        self.chx = dict()
+        prep_viz_options()
         set_context()
         set_labels()
         set_inputs()
 
     def make_collect_frame(self):
-        """Construct frame for collecting profile IDs and citizen data."""
+        """Construct frame for collecting profile IDs, citizen data, etc."""
+
         def set_context():
             """Adjust menus, set frame."""
             setattr(self.buffer, 'current_frame', 'collect')
@@ -390,121 +406,97 @@ class Views(object):
 
         def set_labels():
             """Define widget labels for collect frame."""
-            set_friends_list_input_label =\
-                ttk.Label(self.collect_frame,
-                          text=TX.label.l_getfriends)
-            set_friends_list_input_label.grid(row=1, column=0,
-                                              sticky=tk.E, padx=5)
-            get_citz_by_id_label =\
-                ttk.Label(self.collect_frame,
-                          text=TX.label.l_getcit_byid)
-            get_citz_by_id_label.grid(row=2, column=0, sticky=tk.E, padx=5)
-            get_citz_by_nm_label =\
-                ttk.Label(self.collect_frame,
-                          text=TX.label.l_getcit_bynm)
-            get_citz_by_nm_label.grid(row=3, column=0, sticky=tk.E, padx=5)
-            idf_loc_label =\
-                ttk.Label(self.collect_frame,
-                          text=TX.label.l_idf_loc)
-            idf_loc_label.grid(row=4, column=0, sticky=tk.E, padx=5)
-            db_refresh_label =\
-                ttk.Label(self.collect_frame,
-                          text=TX.label.l_db_refresh)
-            db_refresh_label.grid(row=5, column=0, sticky=tk.E, padx=5)
+            lbl_txt = [TX.label.l_getfriends,
+                       TX.label.l_getcit_byid,
+                       TX.label.l_getcit_bynm,
+                       TX.label.l_idf_loc,
+                       TX.label.l_db_refresh]
+
+            for row_num, label_text in enumerate(lbl_txt):
+                ttk.Label(self.collect_frame, text=label_text).grid(
+                    row=row_num, column=0, sticky=tk.E, padx=5)
 
         def set_inputs():
             """Define input widgets for collect frame."""
 
             def set_friends_list_input():
                 """Collect / refresh friends data."""
-                self.friends_btn =\
-                    ttk.Button(self.collect_frame,
-                               text=TX.button.b_getfriends,
-                               command=self.collect_friends,
-                               state=tk.NORMAL)
-                self.friends_btn.grid(row=1, column=1, sticky=tk.W, padx=5)
+                ttk.Button(self.collect_frame,
+                           text=TX.button.b_getfriends,
+                           command=self.collect_friends,
+                           state=tk.NORMAL).grid(
+                               row=0, column=1, sticky=tk.W, padx=5)
 
             def set_ctzn_by_id_input():
                 """Refresh one citizen by ID."""
-                self.citz_byid = ttk.Entry(self.collect_frame, width=25)
-                self.citz_byid.grid(row=2, column=1, sticky=tk.W, padx=5)
+                self.citz_byid =\
+                    ttk.Entry(self.collect_frame, width=25).grid(
+                        row=1, column=1, sticky=tk.W, padx=5)
                 self.isfriend_id_chk = tk.IntVar()
-                isf_id_chk =\
-                    ttk.Checkbutton(self.collect_frame,
-                                    text=TX.button.c_is_friend,
-                                    variable=self.isfriend_id_chk,
-                                    onvalue=1, offvalue=0)
-                isf_id_chk.grid(row=2, column=2, sticky=tk.E, padx=5)
-                self.citz_by_id_btn =\
-                    ttk.Button(self.collect_frame,
-                               text=TX.button.b_get_ctzn_data,
-                               command=self.get_citizen_by_id,
-                               state=tk.NORMAL)
-                self.citz_by_id_btn.grid(row=2, column=3, sticky=tk.W, padx=5)
+                ttk.Checkbutton(self.collect_frame,
+                                text=TX.button.c_is_friend,
+                                variable=self.isfriend_id_chk,
+                                onvalue=1, offvalue=0).grid(
+                                    row=1, column=2, sticky=tk.E, padx=5)
+                ttk.Button(self.collect_frame,
+                           text=TX.button.b_get_ctzn_data,
+                           command=self.get_citizen_by_id,
+                           state=tk.NORMAL).grid(
+                               row=1, column=3, sticky=tk.W, padx=5)
 
-            def set_ctzn_by_nm_input(usrd):
-                """Refresh one citizen by Name.
-
-                Args:
-                    usrd (namedtuple): "data" part of user record
-                """
+            def set_ctzn_by_nm_input():
+                """Refresh one citizen by Name."""
                 widget_state = tk.NORMAL\
                     if usrd.user_tools_api_key not in (None, "None", "")\
                     else tk.DISABLED
-                self.citz_bynm = ttk.Entry(self.collect_frame, width=25,
-                                           state=widget_state)
-                self.citz_bynm.grid(row=3, column=1, sticky=tk.W, padx=5)
+                self.citz_bynm =\
+                    ttk.Entry(self.collect_frame, width=25,
+                              state=widget_state).grid(
+                                  row=2, column=1, sticky=tk.W, padx=5)
                 self.isfriend_nm_chk = tk.IntVar()
-                isf_nm_chk =\
-                    ttk.Checkbutton(self.collect_frame,
-                                    text=TX.button.c_is_friend,
-                                    variable=self.isfriend_nm_chk,
-                                    onvalue=1, offvalue=0)
-                isf_nm_chk.grid(row=3, column=2, sticky=tk.E, padx=5)
-                self.citz_by_nm_btn =\
-                    ttk.Button(self.collect_frame,
-                               text=TX.button.b_get_ctzn_data,
-                               command=self.get_citizen_by_name,
-                               state=widget_state)
-                self.citz_by_nm_btn.grid(row=3, column=3,
-                                         sticky=tk.W, padx=5)
+                ttk.Checkbutton(self.collect_frame,
+                                text=TX.button.c_is_friend,
+                                variable=self.isfriend_nm_chk,
+                                onvalue=1, offvalue=0).grid(
+                                    row=2, column=2, sticky=tk.E, padx=5)
+                ttk.Button(self.collect_frame,
+                           text=TX.button.b_get_ctzn_data,
+                           command=self.get_citizen_by_name,
+                           state=widget_state).grid(
+                               row=2, column=3, sticky=tk.W, padx=5)
 
             def set_id_by_list_input():
                 """Read in a list of Profile IDs from a file."""
-                self.idf_loc = ttk.Entry(self.collect_frame, width=50)
-                self.idf_loc.grid(row=4, column=1, sticky=tk.W, padx=5)
-                self.idf_loc_set_btn =\
-                    ttk.Button(self.collect_frame,
-                               text=TX.button.b_get_file,
-                               command=self.select_profile_ids_file)
-                self.idf_loc_set_btn.grid(row=4, column=2,
-                                          sticky=tk.W, padx=5)
-                self.idf_loc_get_btn =\
-                    ttk.Button(self.collect_frame,
-                               text=TX.button.b_get_ctzn_data,
-                               command=self.refresh_citzns_from_file)
-                self.idf_loc_get_btn.grid(row=4, column=3,
-                                          sticky=tk.W, padx=5)
+                self.idf_loc =\
+                    ttk.Entry(self.collect_frame, width=50).grid(
+                        row=3, column=1, sticky=tk.W, padx=5)
+                ttk.Button(self.collect_frame,
+                           text=TX.button.b_get_file,
+                           command=self.select_profile_ids_file).grid(
+                               row=3, column=2, sticky=tk.W, padx=5)
+                ttk.Button(self.collect_frame,
+                           text=TX.button.b_get_ctzn_data,
+                           command=self.refresh_citzns_from_file).grid(
+                               row=3, column=3, sticky=tk.W, padx=5)
 
             def set_db_refresh_input():
                 """Refresh all active citizen profile IDs on the database."""
-                self.db_refresh_btn =\
-                    ttk.Button(self.collect_frame,
-                               text=TX.button.b_get_ctzn_data,
-                               command=self.refresh_ctizns_from_db)
-                self.db_refresh_btn.grid(row=5, column=1,
-                                         sticky=tk.W, padx=5)
+                ttk.Button(self.collect_frame,
+                           text=TX.button.b_get_ctzn_data,
+                           command=self.refresh_ctizns_from_db).grid(
+                               row=4, column=1, sticky=tk.W, padx=5)
 
+            # set_inputs() main:
             set_friends_list_input()
             set_ctzn_by_id_input()
-            usrd, _ = CN.get_user_db_record()
             if usrd is not None:
-                set_ctzn_by_nm_input(usrd)
+                set_ctzn_by_nm_input()
             set_id_by_list_input()
             set_db_refresh_input()
 
         # make_collect_frame() MAIN:
         self.close_frame()
+        usrd, _ = CN.get_user_db_record()
         set_context()
         set_labels()
         set_inputs()
@@ -514,12 +506,6 @@ class Views(object):
 
         def prep_cfg_data():
             """Handle empty and None values."""
-            # Figure out a way to store current log level
-            # Maybe use a config file
-            # if cfd is not None:
-            #     if cfd.log_level not in (None, "None"):
-            #        cf_dflt["log_lvl"] = cfd.log_level
-
             if usrd is not None:
                 if usrd.user_erep_email not in (None, "None"):
                     usrd_dflt["email"] = usrd.user_erep_email
@@ -543,18 +529,14 @@ class Views(object):
 
         def set_labels():
             """Define and assign text to data entry labels."""
-            loglvl_label = ttk.Label(self.cfg_frame,
-                                     text=TX.label.l_log_lvl)
-            loglvl_label.grid(row=1, column=0, sticky=tk.E, padx=5)
-            email_label = ttk.Label(self.cfg_frame,
-                                    text=TX.label.l_email)
-            email_label.grid(row=2, column=0, sticky=tk.E, padx=5)
-            passlabel = ttk.Label(self.cfg_frame,
-                                  text=TX.label.l_passw)
-            passlabel.grid(row=3, column=0, sticky=tk.E, padx=5)
-            apikey_label = ttk.Label(self.cfg_frame,
-                                     text=TX.label.l_apikey)
-            apikey_label.grid(row=4, column=0, sticky=tk.E, padx=5)
+            lbl_txt = [TX.label.l_log_lvl,
+                       TX.label.l_email,
+                       TX.label.l_passw,
+                       TX.label.l_apikey]
+
+            for row_num, label_text in enumerate(lbl_txt):
+                ttk.Label(self.cfg_frame, text=label_text).grid(
+                    row=row_num, column=0, sticky=tk.E, padx=5)
 
         def set_inputs():
             """Define and assign defaults to data input widgets."""
@@ -570,12 +552,12 @@ class Views(object):
                 self.log_level = tk.OptionMenu(self.cfg_frame,
                                                self.log_lvl_val,
                                                *ST.LogLevel.keys())
-                self.log_level.grid(row=1, column=1, sticky=tk.W, padx=5)
+                self.log_level.grid(row=0, column=1, sticky=tk.W, padx=5)
                 self.log_save_btn =\
                     ttk.Button(self.cfg_frame,
                                text=TX.button.b_save_log_cfg,
                                command=self.save_log_level)
-                self.log_save_btn.grid(row=1, column=3, sticky=tk.W, padx=5)
+                self.log_save_btn.grid(row=0, column=3, sticky=tk.W, padx=5)
 
             def set_erep_email_input():
                 """User's eRepublik login email credential."""
@@ -583,7 +565,7 @@ class Views(object):
                 email_val = tk.StringVar(self.cfg_frame)
                 email_val.set(usrd_dflt["email"])
                 self.email.insert(0, email_val.get())
-                self.email.grid(row=2, column=1, sticky=tk.W, padx=5)
+                self.email.grid(row=1, column=1, sticky=tk.W, padx=5)
 
             def set_erep_password_input():
                 """User's eRepublik login password credential. Hidden input."""
@@ -591,12 +573,12 @@ class Views(object):
                 passw_val = tk.StringVar(self.cfg_frame)
                 passw_val.set(usrd_dflt["passw"])
                 self.passw.insert(0, passw_val.get())
-                self.passw.grid(row=3, column=1, sticky=tk.W, padx=5)
+                self.passw.grid(row=2, column=1, sticky=tk.W, padx=5)
                 self.creds_save_btn =\
                     ttk.Button(self.cfg_frame,
                                text=TX.button.b_save_creds,
                                command=self.save_user_config)
-                self.creds_save_btn.grid(row=3, column=3, sticky=tk.W, padx=5)
+                self.creds_save_btn.grid(row=2, column=3, sticky=tk.W, padx=5)
 
             def set_apikey_input():
                 """User's eRepublik Tools API key. Hidden input."""
@@ -604,12 +586,12 @@ class Views(object):
                 apikey_val = tk.StringVar(self.cfg_frame)
                 apikey_val.set(usrd_dflt["apikey"])
                 self.apikey.insert(0, apikey_val.get())
-                self.apikey.grid(row=4, column=1, sticky=tk.W, padx=5)
+                self.apikey.grid(row=3, column=1, sticky=tk.W, padx=5)
                 self.apikey_save_btn =\
                     ttk.Button(self.cfg_frame,
                                text=TX.button.b_save_apikey,
                                command=self.save_apikey_config)
-                self.apikey_save_btn.grid(row=4, column=3, sticky=tk.W, padx=5)
+                self.apikey_save_btn.grid(row=3, column=3, sticky=tk.W, padx=5)
 
             set_log_level_input()
             set_erep_email_input()

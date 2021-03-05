@@ -22,10 +22,10 @@ class Texts(object):
     class title:
         """Window, frame, messagebox titles."""
 
-        t_app: str = 'Analyze eRepublik Citizens Data'
+        t_app: str = 'Analyze eRepublik Data'
         t_cfg: str = 'Configure efriends'
-        t_coll: str = 'Collect Citizen Data'
-        t_viz: str = 'Visualize Citizen Data'
+        t_coll: str = 'Collect Data'
+        t_viz: str = 'Visualize Data'
         t_info: str = "Information"
         t_warn: str = "Warning"
         t_error: str = "Error"
@@ -45,8 +45,8 @@ class Texts(object):
         i_close: str = 'Close'
         i_quit: str = 'Exit'
         i_cfg: str = 'Configure efriends'
-        i_coll: str = 'Collect Citizen Data'
-        i_viz: str = 'Visualize Citizen Data'
+        i_coll: str = 'Collect Data'
+        i_viz: str = 'Visualize Data'
         i_docs: str = 'User Guide'
         i_about: str = 'About'
 

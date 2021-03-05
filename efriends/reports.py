@@ -13,29 +13,58 @@ Author:    PQ <pq_rfw @ pm.me>
 -- Clean:
 --   Trim spaces
 --   Convert None to text value
+--   Remove or identify dups
 -- Categorize:
 --   ? time ? geography ? relationships ?
 -- Enumerate / standardize:
---   Convert geo and org data to numbers
+--   Convert data to numbers
 --   Use profile IDs rather than names
 -- Explore/Experiment
 --   Try various visualization styles
 --   Try various visualization tools
--- Apply Algorithms
+-- Apply Algorithms / Build Models
+--   Select goodness of fit criteria
+--   Select significance levels
+--   Fit predictors/remove predictors
 --   Standard distributions
---   Time-series, changes
---   Predictive models
+--   Set selection & elimination rules
+--   Evaluate time-series, changes
+--   Evaluate predictive models
 -- Iterate/Review/Improve
 --   Publish, collect feedback
 -- Distribute, optimize
 --   Schedule, push
 --   Collect bug reports
+
+To assign hash to a SQL, select only the SQL code, then
+at command line (in ../efriends), do like...:
+
+`>>> from utils import Utils
+>>> UT = Utils()
+>>> sql = \"\"\"
+... SELECT COUNT(name) AS Citizens,
+...        citizenship_country AS Country
+...   FROM citizen
+...  WHERE delete_ts IS NULL and is_alive = "True"
+...  GROUP BY country
+...  ORDER BY citizens DESC, country ASC;
+... \"\"\"
+>>> print(UT.get_hash(sql.strip()))
+36985b5737273dbd58386436bcfc8eb4c58b2b77682456f4935dc512925c3f3a`
+
+and then paste in the hash after two dashes and space on line 1 of SQL.
+
+Save as to ~/.efriends/db with a name that starts with a unique sql_id and
+ends with ."sql".
+
+If done properly, then query should show up on "viz" frame.
 """
 import csv
 import json
-from os import path
+from os import listdir, path
 from pathlib import Path
 from pprint import pprint as pp  # noqa: F401
+import shutil
 
 import pandas as pd
 import pdfkit
@@ -54,14 +83,46 @@ class Reports(object):
 
     def __init__(self):
         """Initialize Reports object."""
-        self.sql_files = {
-            "q0100": "q0100_country_party_count.sql"
-        }
+        self.temp_path = "/dev/shm"
+        self.db_path = path.join(UT.get_home(), TX.dbs.db_path)
+        self.cache_path = path.join(UT.get_home(), TX.dbs.cache_path)
+        self.file_types = ["json", "csv", "html", "pdf", "df"]
+        self.sql_files = self.get_sql_files()
+
+    def get_sql_files(self) -> dict:
+        """Assemble dictionary of SQL files stored in DB dir.
+
+        Returns:
+            dict: {<sql_id>: <name of sql file>}
+        """
+        sql_files = dict()
+        db_files = listdir(self.db_path)
+        for dbf in db_files:
+            if dbf[-4:] == ".sql":
+                sql_id = dbf.split("_")[0]
+                sql_files[sql_id] = dbf
+        return sql_files
+
+    def get_query_desc(self, p_sql_nm: str) -> str:
+        """Return the description fro selected SQL id.
+
+        Args:
+            p_sql_nm (str): A valid sql file identifier.
+
+        Returns:
+            str: Embedded desription on line 3 of SQL file.
+        """
+        sqlexp_path = path.join(UT.get_home(), TX.dbs.db_path,
+                                self.sql_files[p_sql_nm])
+        with open(sqlexp_path) as sqf:
+            _ = sqf.readline()
+            _ = sqf.readline()
+            sql_desc = sqf.readline()
+        sqf.close()
+        return sql_desc[3:].strip()
 
     def verify_sql_file(self, p_sql_nm: str) -> bool:
         """Verify SQL file exists and is valid.
-
-        @DEV - May want to store SQL hash in DB rather than file
 
         Args:
             p_sql_nm (str): A valid sql file identifier.
@@ -78,6 +139,7 @@ class Reports(object):
         with open(sqlexp_path) as sqf:
             hash_id = sqf.readline()
             sql_id = sqf.readline()
+            sql_desc = sqf.readline()
             sql = sqf.read()
         sqf.close()
         if p_sql_nm not in sql_id:
@@ -107,9 +169,7 @@ class Reports(object):
                    "data" : [list containing (tuples of values)]}
         """
         result_dict = dict()
-        result_dict["export"] =\
-            path.join(UT.get_home(), TX.dbs.cache_path,
-                      self.sql_files[p_sql_nm]).replace(".sql", "")
+        result_dict["export"] = self.sql_files[p_sql_nm].replace(".sql", "")
         result = DB.query_citizen_sql(self.sql_files[p_sql_nm])
         result_dict["header"] = result.pop(0)
         result_dict["data"] = list()
@@ -123,16 +183,17 @@ class Reports(object):
             result_dict["data"].append(tuple(row_out))
         return result_dict
 
-    def export_to_json(self, p_result: dict) -> str:
-        """Export query results in a simple JSON format.
+    def create_json(self, p_result: dict) -> str:
+        """Put query results into a simple JSON format.
 
         Args:
             p_result (dict): as created by get_query_result()
 
         Returns:
-            str: full path to the JSON file
+            str: full path to the JSON temp file
         """
-        export_path = p_result["export"] + ".json"
+        file_path = path.join(self.temp_path,
+                              p_result["export"] + ".json")
         data = list()
         for row_d in p_result["data"]:
             row_j = dict()
@@ -140,22 +201,22 @@ class Reports(object):
                 col_nm = p_result["header"][cx]
                 row_j[col_nm] = val
             data.append(row_j)
-            with open(export_path, 'w') as jf:
-                jf.write(json.dumps(data))
-            jf.close()
-        return export_path
+        with open(file_path, 'w') as jf:
+            jf.write(json.dumps(data))
+        jf.close()
+        return file_path
 
-    def export_to_csv(self, p_result: dict) -> str:
-        """Export query results to CSV format.
+    def create_csv(self, p_result: dict):
+        """Put query results into CSV format.
 
         Args:
             p_result (dict): as created by get_query_result()
 
         Returns:
-            str: full path to the CSV file
+            str: full path to the CSV temp file
         """
-        export_path = p_result["export"] + ".csv"
-        with open(export_path, 'w') as cf:
+        file_path = path.join(self.temp_path, p_result["export"] + ".csv")
+        with open(file_path, 'w') as cf:
             writer = csv.writer(cf, delimiter=",", quotechar='"',
                                 quoting=csv.QUOTE_MINIMAL)
             writer.writerow(list(p_result["header"]))
@@ -163,55 +224,50 @@ class Reports(object):
                 data_r = list(data_t)
                 writer.writerow(data_r)
         cf.close()
-        return export_path
+        return file_path
 
-    def export_to_html(self, p_result: dict,
-                       p_dataframe: object) -> str:
-        """Export query results to HTML format.
+    def create_html(self, p_result: dict,
+                    p_dataframe: object) -> str:
+        """Put query results into HTML format.
 
         Args:
             p_result (dict): as created by get_query_result()
             p_dataframe (object): Pandas df based on CSV data
 
         Returns:
-            str: full path to the HTML file
-
-        @DEV - FYI, pandas can also write directly to a sqlite DB using...
-        data.to_sql('table-nm', '<db-connection>', ...)
-        See: https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.to_sql.html  # noqa: E501
-        Parquet, hdf5 and other formats also supported
+            str: full path to the HTML temp file
         """
-        export_path = p_result["export"] + ".html"
-        with open(export_path, 'w') as hf:
+        file_path = path.join(self.temp_path, p_result["export"] + ".html")
+        with open(file_path, 'w') as hf:
             hf.write(p_dataframe.to_html())
         hf.close()
-        return export_path
+        return file_path
 
-    def export_to_df_pickle(self, p_result: dict,
-                            p_dataframe: object) -> str:
-        """Export query results to pickled (binary) dataframe object.
+    def create_df_pickle(self, p_result: dict,
+                         p_dataframe: object) -> str:
+        """Put query results to pickled (binary) dataframe object.
 
         Args:
             p_result (dict): as created by get_query_result()
             p_dataframe (object): Pandas df based on CSV data
 
         Returns:
-            str: full path to the PKL file
+            str: full path to the PKL temp file
         """
-        export_path = p_result["export"] + ".pkl"
-        p_dataframe.to_pickle(export_path)
-        return export_path
+        file_path = path.join(self.temp_path, p_result["export"] + ".pkl")
+        p_dataframe.to_pickle(file_path)
+        return file_path
 
-    def export_to_pdf(self, p_result: dict,
-                      p_html_path: str) -> str:
-        """Export query results (from HTML export) to PDF file.
+    def create_pdf(self, p_result: dict,
+                   p_html_file: str) -> str:
+        """Put query results (from HTML export) into PDF file.
 
         Args:
             p_result (dict): as created by get_query_result()
-            p_html_path (str): HTML file created for current dataset
+            p_html_file (str): HTML file created for current dataset
 
         Returns:
-            str: full path to the PDF file
+            str: full path to the PDF temp file
 
         @DEV - For more about creating PDFs, see:
         - https://realpython.com/creating-modifying-pdf/#creating-a-pdf-file-from-scratch        # noqa: E501
@@ -220,7 +276,7 @@ class Reports(object):
         - https://www.adobe.com/content/dam/acom/en/devnet/acrobat/pdfs/pdf_reference_1-7.pdf    # noqa: E501
         My examples, notes on PDF in ..projects/snips/Viz_and_Analytics_Playground.ipynb         # noqa: E501
         """
-        export_path = p_result["export"] + ".pdf"
+        file_path = path.join(self.temp_path, p_result["export"] + ".pdf")
         options = {
             'page-size': 'Letter',
             'margin-top': '0.75in',
@@ -231,8 +287,8 @@ class Reports(object):
             'custom-header': [
                 ('Accept-Encoding', 'gzip')
             ]}
-        pdfkit.from_file(p_html_path, export_path, options=options)
-        return export_path
+        pdfkit.from_file(p_html_file, file_path, options=options)
+        return file_path
 
     def run_citizen_viz(self,
                         p_sql_nm: str,
@@ -245,36 +301,29 @@ class Reports(object):
 
         Returns:
             exports (dict): zero to many of file_type: file_location
-
-        @DEV - use `from io import StringIO` to create an in-mem "file".
-         Or use /dev/shm to write temp files, then save to disk if requested.
-
-        @DEV - Put together some more SQL's. Include descriptions that
-         can be used in the GUI? Need a process to auto-set the hash_id's on
-         new SQL's.
-
-        @DEV - See Jupyter notebook stuff on generating plots. See about
-         specifying pre-fabbed visualizations for a given dataset, perhaps
-         named by ID similar to the SQL id's.  See about providing generic
-         plotting/diagramming for (some?) datasets.
         """
         exports = dict()
+        t_file = dict()
         if self.verify_sql_file(p_sql_nm):
             result = self.get_query_result(p_sql_nm)
+            # Create temp files as needed
             if "json" in p_file_types:
-                exports["json"] = self.export_to_json(result)
+                t_file["json"] = self.create_json(result)
             if "csv" in p_file_types or "html" in p_file_types or\
                "pdf" in p_file_types or "df" in p_file_types:
-                csv_path = self.export_to_csv(result)
-                data_df = pd.read_csv(csv_path)
-            if "csv" in p_file_types:
-                exports["csv"] = csv_path
-            if "html" or "pdf" in p_file_types:
-                html_path = self.export_to_html(result, data_df)
-            if "html" in p_file_types:
-                exports["html"] = html_path
+                t_file["csv"] = self.create_csv(result)
+                data_df = pd.read_csv(t_file["csv"])
+            if "html" in p_file_types or "pdf" in p_file_types:
+                t_file["html"] = self.create_html(result, data_df)
             if "df" in p_file_types:
-                exports["df"] = self.export_to_df_pickle(result, data_df)
+                t_file["pkl"] = self.create_df_pickle(result, data_df)
             if "pdf" in p_file_types:
-                exports["pdf"] = self.export_to_pdf(result, html_path)
+                t_file["pdf"] = self.create_pdf(result, t_file["html"])
+            # Export files
+            for ftyp in p_file_types:
+                ftyp = "pkl" if ftyp == "df" else ftyp
+                cache_file = path.join(self.cache_path,
+                                       result["export"] + "." + ftyp)
+                exports[ftyp] = cache_file
+                shutil.copy(t_file[ftyp], cache_file)
         return(exports)
