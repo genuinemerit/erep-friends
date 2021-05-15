@@ -1,6 +1,6 @@
 #!/usr/bin/bash
 
-# Edit this file as needed to identify location of efreinds directory.
+# Edit this file as needed to identify location of efriends directory.
 # Then copy it to /usr/local/bin.
 
 APPDIR=${HOME}/Dropbox/projects

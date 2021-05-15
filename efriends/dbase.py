@@ -26,7 +26,7 @@ Class:     Dbase
 Author:    PQ <pq_rfw @ pm.me>
 """
 import sqlite3 as sq3
-from collections import namedtuple
+# from collections import namedtuple
 from copy import copy
 from os import path, remove
 from pathlib import Path

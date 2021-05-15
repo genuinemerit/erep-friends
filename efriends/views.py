@@ -371,11 +371,6 @@ class Views(object):
             row_cnt = 0
             # This is problematic. Only gets sql ID (fid) from last item built.
             for fid, desc in self.qry.items():
-                ttk.Button(self.viz_frame,
-                            text=TX.button.b_run_query,
-                            command=lambda: self.run_visualization(fid),
-                            state=tk.NORMAL).grid(
-                                row=row_cnt, column=1, sticky=tk.W, padx=5)
                 self.chx[fid] = dict()
                 for fky, fty in enumerate(self.foutypes):
                     set_export_options(fid, fty, row_cnt, fky + 2)

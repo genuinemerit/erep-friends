@@ -1,3 +1,10 @@
+# Required: ldap on ubuntu ->
+#  first, sudo  apt-get install --upgrade slapd ldap-utils-y
+#  then, sudo apt-get install libsasl2-dev libldap2-dev libssl-dev
+#  then, sudo dpkg-reconfigure slapd  assign domain, app, credentials
+# For more info see:
+#  https://www.linux.com/topic/desktop/how-install-openldap-ubuntu-server-1804/
+# To check status:  sudo service slapd status
 cryptography
 flake8
 isort
@@ -9,7 +16,14 @@ pyopenssl
 pywebview
 requests
 secrets
+# Probably need to do sudo apt-get install python3-tk instead of just pip3 tk
 tk
 tornado
+# Several typing libs only work on python 3.8 or better.
+# Best to upgrade to latest (3.8 or 3.9) python before anything else
+# For ubuntu, see:
+#  https://tech.serhatteker.com/post/2020-09/how-to-install-python39-on-ubuntu/
+#  Build from source to get a solid, clean install.
+#  Installing separate build of Python for major releases is A Good Thing.
 typing
 tzlocal
